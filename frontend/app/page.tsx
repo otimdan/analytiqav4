@@ -5,9 +5,10 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
-// NOTE: auth isn't built yet, so CTAs point at the app (/app). Once Supabase
-// Auth lands these become /signup and /login.
-const START_HREF = "/app"
+// New visitors go to signup; returning users to login. Auth middleware then
+// routes them into /app.
+const SIGNUP_HREF = "/signup"
+const LOGIN_HREF = "/login"
 
 const FEATURES = [
   {
@@ -73,10 +74,10 @@ export default function HomePage() {
           </Link>
           <nav className="flex items-center gap-2">
             <Button asChild variant="ghost" size="sm">
-              <Link href={START_HREF}>Sign in</Link>
+              <Link href={LOGIN_HREF}>Sign in</Link>
             </Button>
             <Button asChild size="sm">
-              <Link href={START_HREF}>Get started</Link>
+              <Link href={SIGNUP_HREF}>Get started</Link>
             </Button>
           </nav>
         </div>
@@ -99,7 +100,7 @@ export default function HomePage() {
             </p>
             <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Button asChild size="xl">
-                <Link href={START_HREF}>
+                <Link href={SIGNUP_HREF}>
                   Upload a dataset <ArrowRight className="size-4" />
                 </Link>
               </Button>
@@ -188,7 +189,7 @@ export default function HomePage() {
                     ))}
                   </ul>
                   <Button asChild className="mt-7 w-full" variant={t.highlighted ? "default" : "outline"}>
-                    <Link href={START_HREF}>{t.cta}</Link>
+                    <Link href={SIGNUP_HREF}>{t.cta}</Link>
                   </Button>
                 </div>
               ))}
@@ -206,7 +207,7 @@ export default function HomePage() {
               Your first analyses are on us. See what a guided AI analyst does with your data.
             </p>
             <Button asChild size="xl" variant="secondary" className="mt-8 bg-white text-indigo-700 hover:bg-indigo-50">
-              <Link href={START_HREF}>
+              <Link href={SIGNUP_HREF}>
                 Get started free <ArrowRight className="size-4" />
               </Link>
             </Button>
