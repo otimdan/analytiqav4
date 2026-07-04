@@ -14,6 +14,7 @@ import { StepRail } from "@/components/progress/StepRail"
 import { ArtifactHistory } from "@/components/artifacts/ArtifactHistory"
 import { AccountMenu } from "@/components/auth/AccountMenu"
 import { UsageMeter } from "@/components/account/UsageMeter"
+import { UpgradeButton } from "@/components/account/UpgradeButton"
 
 function nanoid() { return crypto.randomUUID() }
 
@@ -26,6 +27,16 @@ export default function AnalysisPage() {
   const [isStreaming, setIsStreaming] = useState(false)
   const [dismissedFeedback, setDismissedFeedback] = useState<Set<string>>(new Set())
   const historyLoadedFor = useRef<string | null>(null)
+
+  // Returning from Dodo checkout: refresh the plan/usage and clean the URL.
+  // (Webhook is the source of truth; this just pulls the fresh state sooner.)
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    if (new URLSearchParams(window.location.search).get("checkout") === "success") {
+      refreshUsage()
+      window.history.replaceState({}, "", "/app")
+    }
+  }, [refreshUsage])
 
   // On restore (session id set from localStorage, chat empty), load prior
   // messages so the conversation and its code/output blocks persist.
@@ -142,6 +153,7 @@ export default function AnalysisPage() {
             <span className="text-xs text-gray-400">{sessionState?.profile_summary?.row_count} rows</span>
           </div>
           <div className="flex items-center gap-3">
+            {usage?.plan === "free" && <UpgradeButton />}
             <UsageMeter usage={usage} />
             <AccountMenu />
           </div>

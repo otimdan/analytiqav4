@@ -43,6 +43,15 @@ PLAN_LIMITS = {
     "pro": int(os.getenv("PRO_MONTHLY_ANALYSES", "300")),
 }
 
+# ── Dodo Payments ─────────────────────────────────────────────
+# Optional: billing endpoints return 503 until these are set.
+DODO_API_KEY = os.getenv("DODO_PAYMENTS_API_KEY", "")
+DODO_WEBHOOK_KEY = os.getenv("DODO_PAYMENTS_WEBHOOK_KEY", "")
+DODO_ENVIRONMENT = os.getenv("DODO_PAYMENTS_ENVIRONMENT", "test_mode")  # or "live_mode"
+DODO_PRO_PRODUCT_ID = os.getenv("DODO_PRO_PRODUCT_ID", "")
+# Public URL of the frontend, used to build the post-checkout return URL.
+APP_URL = os.getenv("APP_URL", "http://localhost:3000")
+
 _REQUIRED = {
     "FIREWORKS_API_KEY": FIREWORKS_API_KEY,
     "E2B_API_KEY": E2B_API_KEY,

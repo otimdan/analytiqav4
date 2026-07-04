@@ -12,6 +12,10 @@ python-dotenv==1.0.1
 PyJWT==2.9.0
 cryptography>=43.0.0  # required by PyJWT to verify ES256 (asymmetric signing keys)
 
+# ── Payments (Dodo Payments) ──────────────────────────────────
+dodopayments>=1.0.0
+standardwebhooks>=1.0.0  # Standard Webhooks signature verification
+
 # ── Data validation ───────────────────────────────────────────
 pydantic==2.8.2
 pydantic-settings==2.4.0

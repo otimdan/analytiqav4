@@ -62,3 +62,7 @@ export async function submitFeedback(req: FeedbackRequest): Promise<void> {
 export async function getUsage(): Promise<UsageSummary> {
   return apiFetch<UsageSummary>("/me/usage")
 }
+
+export async function createCheckout(): Promise<{ checkout_url: string }> {
+  return apiFetch<{ checkout_url: string }>("/billing/checkout", { method: "POST" })
+}

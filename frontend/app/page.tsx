@@ -224,6 +224,10 @@ export default function HomePage() {
             </span>
             Analytika
           </div>
+          <nav className="flex items-center gap-5">
+            <Link href="/privacy" className="hover:text-gray-800">Privacy</Link>
+            <Link href="/terms" className="hover:text-gray-800">Terms</Link>
+          </nav>
           <p>© {new Date().getFullYear()} Analytika. All rights reserved.</p>
         </div>
       </footer>
