@@ -1,4 +1,4 @@
-import type { UploadResponse, SessionState, FeedbackRequest, Artifact, MessageHistoryItem } from "./types"
+import type { UploadResponse, SessionState, FeedbackRequest, Artifact, MessageHistoryItem, UsageSummary } from "./types"
 import { authHeader } from "./supabase/token"
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
@@ -57,4 +57,8 @@ export async function getCompletedStages(sessionId: string): Promise<string[]> {
 
 export async function submitFeedback(req: FeedbackRequest): Promise<void> {
   await apiFetch("/feedback", { method: "POST", sessionId: req.session_id, body: JSON.stringify(req) })
+}
+
+export async function getUsage(): Promise<UsageSummary> {
+  return apiFetch<UsageSummary>("/me/usage")
 }

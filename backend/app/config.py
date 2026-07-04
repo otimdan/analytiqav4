@@ -33,6 +33,16 @@ FEEDBACK_EVERY_N_TURNS = int(os.getenv("FEEDBACK_EVERY_N_TURNS", "3"))
 CHI_SQUARE_MIN_EXPECTED_CELL = int(os.getenv("CHI_SQUARE_MIN_EXPECTED_CELL", "5"))
 MIN_SAMPLE_SIZE_PER_GROUP = int(os.getenv("MIN_SAMPLE_SIZE_PER_GROUP", "20"))
 
+# ── Billing / usage caps ──────────────────────────────────────
+# Metered analyses per calendar month, per plan. A "metered analysis" is an
+# exploratory or confirmatory run (the compute-heavy regimes). Keep these in
+# sync with the pricing shown on the homepage.
+DEFAULT_PLAN = "free"
+PLAN_LIMITS = {
+    "free": int(os.getenv("FREE_MONTHLY_ANALYSES", "10")),
+    "pro": int(os.getenv("PRO_MONTHLY_ANALYSES", "300")),
+}
+
 _REQUIRED = {
     "FIREWORKS_API_KEY": FIREWORKS_API_KEY,
     "E2B_API_KEY": E2B_API_KEY,

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import session, query, feedback, health, artifacts
+from app.routers import session, query, feedback, health, artifacts, account
 from app.logging_config import setup_logging
 
 import app.config  # noqa: F401 — triggers startup validation
@@ -28,6 +28,7 @@ def create_app() -> FastAPI:
     application.include_router(feedback.router)
     application.include_router(health.router)
     application.include_router(artifacts.router)
+    application.include_router(account.router)
 
     return application
 

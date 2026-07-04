@@ -5,6 +5,7 @@ import { getMessages } from "@/lib/api"
 import { useSession } from "@/hooks/useSession"
 import { useGuidance } from "@/hooks/useGuidance"
 import { useArtifacts } from "@/hooks/useArtifacts"
+import { useUsage } from "@/hooks/useUsage"
 import { streamQuery } from "@/lib/sse"
 import { ChatInput } from "@/components/chat/ChatInput"
 import { MessageList } from "@/components/chat/MessageList"
@@ -12,6 +13,7 @@ import { StreamingOutput } from "@/components/chat/StreamingOutput"
 import { StepRail } from "@/components/progress/StepRail"
 import { ArtifactHistory } from "@/components/artifacts/ArtifactHistory"
 import { AccountMenu } from "@/components/auth/AccountMenu"
+import { UsageMeter } from "@/components/account/UsageMeter"
 
 function nanoid() { return crypto.randomUUID() }
 
@@ -19,6 +21,7 @@ export default function AnalysisPage() {
   const { sessionId, sessionState, loading, error, upload, refresh } = useSession()
   const guidance = useGuidance(sessionState)
   const { artifacts, completedStages, refresh: refreshArtifacts } = useArtifacts(sessionId)
+  const { usage, refresh: refreshUsage } = useUsage()
   const [messages, setMessages] = useState<Message[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [dismissedFeedback, setDismissedFeedback] = useState<Set<string>>(new Set())
@@ -90,9 +93,10 @@ export default function AnalysisPage() {
         setIsStreaming(false)
         await refresh()
         await refreshArtifacts()
+        await refreshUsage()
       }
     )
-  }, [sessionId, isStreaming, refresh, refreshArtifacts])
+  }, [sessionId, isStreaming, refresh, refreshArtifacts, refreshUsage])
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -137,7 +141,10 @@ export default function AnalysisPage() {
             <span className="text-xs text-gray-300">·</span>
             <span className="text-xs text-gray-400">{sessionState?.profile_summary?.row_count} rows</span>
           </div>
-          <AccountMenu />
+          <div className="flex items-center gap-3">
+            <UsageMeter usage={usage} />
+            <AccountMenu />
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto">
           <MessageList

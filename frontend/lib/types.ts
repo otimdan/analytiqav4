@@ -46,6 +46,13 @@ export interface NextAction {
   query: string
 }
 
+export interface UsageSummary {
+  plan: string
+  used: number
+  limit: number
+  remaining: number
+}
+
 export interface StreamChunk {
   type: ChunkType
   content?: string
