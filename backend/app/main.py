@@ -2,11 +2,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import session, query, feedback, health, artifacts
+from app.logging_config import setup_logging
 
 import app.config  # noqa: F401 — triggers startup validation
 
 
 def create_app() -> FastAPI:
+    setup_logging()
     application = FastAPI(
         title="Analytika API",
         version="1.0.0",

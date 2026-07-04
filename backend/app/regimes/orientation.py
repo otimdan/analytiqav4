@@ -1,6 +1,7 @@
 from typing import Any
 from app.db.models import Session
 from app.llm.fireworks_client import call_structured_output
+from app.config import FIREWORKS_MODEL_CHAT
 from app.llm.prompts import ORIENTATION_SYSTEM_PROMPT
 from app.llm.schemas import OrientationRecap
 from app.db.artifacts import get_artifacts_for_session
@@ -35,7 +36,7 @@ async def handle(session: Session, context: dict[str, Any]) -> dict[str, Any]:
         + "\n\nGive a brief recap and one specific next step."
     )
 
-    recap: OrientationRecap = await call_structured_output(messages=[{"role": "user", "content": orientation_prompt}], system_prompt=ORIENTATION_SYSTEM_PROMPT, schema_class=OrientationRecap, temperature=0.2)
+    recap: OrientationRecap = await call_structured_output(messages=[{"role": "user", "content": orientation_prompt}], system_prompt=ORIENTATION_SYSTEM_PROMPT, schema_class=OrientationRecap, temperature=0.2, model=FIREWORKS_MODEL_CHAT)
 
     done_text = ""
     if recap.what_has_been_done:

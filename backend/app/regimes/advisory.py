@@ -2,6 +2,7 @@ import re
 from typing import Any
 from app.db.models import Session
 from app.llm.fireworks_client import call_main_model
+from app.config import FIREWORKS_MODEL_CHAT
 from app.llm.prompts import ADVISORY_SYSTEM_PROMPT
 from app.orchestrator.context_builder import format_context_for_prompt
 from app.stats_engine.variable_classifier import classify_variable
@@ -15,7 +16,7 @@ async def handle(message: str, session: Session, context: dict[str, Any]) -> dic
 
     context_block = format_context_for_prompt(context)
     messages = [{"role": "user", "content": f"{context_block}\n\nQuestion: {message}"}]
-    response = await call_main_model(messages=messages, system_prompt=ADVISORY_SYSTEM_PROMPT, tools=None, temperature=0.1)
+    response = await call_main_model(messages=messages, system_prompt=ADVISORY_SYSTEM_PROMPT, tools=None, temperature=0.1, model=FIREWORKS_MODEL_CHAT)
     return _empty_result(text=response.message.content or "", stage="descriptive")
 
 
@@ -38,7 +39,7 @@ async def _handle_method_evaluation(message: str, session: Session, context: dic
 
     context_block = format_context_for_prompt(context)
     messages = [{"role": "user", "content": f"{context_block}{assumption_notes}\n\nQuestion: {message}\n\nBased on the assumption check results above, advise whether the suggested method is appropriate. If not, suggest what would be better and why. End by asking if they want you to run the analysis."}]
-    response = await call_main_model(messages=messages, system_prompt=ADVISORY_SYSTEM_PROMPT, tools=None, temperature=0.1)
+    response = await call_main_model(messages=messages, system_prompt=ADVISORY_SYSTEM_PROMPT, tools=None, temperature=0.1, model=FIREWORKS_MODEL_CHAT)
     return _empty_result(text=response.message.content or "", stage="descriptive")
 
 

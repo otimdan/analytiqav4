@@ -1,10 +1,11 @@
 from typing import Any
 from app.llm.fireworks_client import call_main_model
+from app.config import FIREWORKS_MODEL_CHAT
 from app.llm.prompts import PEDAGOGY_SYSTEM_PROMPT
 
 
 async def handle(message: str, context: dict[str, Any]) -> dict[str, Any]:
-    response = await call_main_model(messages=[{"role": "user", "content": message}], system_prompt=PEDAGOGY_SYSTEM_PROMPT, tools=None, temperature=0.2)
+    response = await call_main_model(messages=[{"role": "user", "content": message}], system_prompt=PEDAGOGY_SYSTEM_PROMPT, tools=None, temperature=0.2, model=FIREWORKS_MODEL_CHAT)
     text = response.message.content or ""
     suggested_next = None
     if context.get("suggestion_mode") and context.get("profile_summary"):

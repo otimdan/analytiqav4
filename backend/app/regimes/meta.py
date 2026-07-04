@@ -21,7 +21,7 @@ async def handle(message: str, session: Session, context: dict[str, Any]) -> dic
     if _is_acknowledgment(message_lower):
         return _acknowledge()
     if _is_challenge(message_lower):
-        return _handle_challenge(session, context)
+        return await _handle_challenge(session, context)
     if _is_navigation(message_lower):
         return _navigate()
 
@@ -52,9 +52,10 @@ async def _handle_report(session: Session) -> dict[str, Any]:
         return _empty_result("I had trouble generating the report. Make sure you have some completed analyses first.")
 
 
-def _handle_challenge(session: Session, context: dict[str, Any]) -> dict[str, Any]:
+async def _handle_challenge(session: Session, context: dict[str, Any]) -> dict[str, Any]:
     from app.db.artifacts import get_artifacts_for_session
-    artifacts = get_artifacts_for_session(str(session.id), include_superseded=False)
+    from app.db.aio import run_db
+    artifacts = await run_db(get_artifacts_for_session, str(session.id), include_superseded=False)
     inferential = [a for a in reversed(artifacts) if a.stage == "inferential"]
     if not inferential:
         return _empty_result("I don't have a recent statistical result to review. What specifically looks wrong?")

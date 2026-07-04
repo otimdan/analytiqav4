@@ -14,9 +14,10 @@ async def call_main_model(
     tool_choice: str = "auto",
     temperature: float = 0.1,
     max_tokens: int = 2048,
+    model: str | None = None,
 ) -> Any:
     kwargs: dict[str, Any] = {
-        "model": FIREWORKS_MODEL_MAIN,
+        "model": model or FIREWORKS_MODEL_MAIN,
         "messages": [{"role": "system", "content": system_prompt}, *messages],
         "temperature": temperature,
         "max_tokens": max_tokens,
@@ -61,13 +62,14 @@ async def call_structured_output(
     system_prompt: str,
     schema_class,
     temperature: float = 0.1,
+    model: str | None = None,
 ) -> Any:
     schema_hint = (
         f"\n\nRespond with a single JSON object with exactly these fields "
         f"(no extra fields, no nesting):\n{json.dumps(schema_class.model_json_schema()['properties'])}"
     )
     response = await _client.chat.completions.create(
-        model=FIREWORKS_MODEL_MAIN,
+        model=model or FIREWORKS_MODEL_MAIN,
         messages=[{"role": "system", "content": system_prompt + schema_hint}, *messages],
         temperature=temperature,
         max_tokens=4096,

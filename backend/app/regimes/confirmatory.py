@@ -11,11 +11,12 @@ from app.sandbox.repair import attempt_repair
 from app.stats_engine.test_selector import select_test, is_multivariate_request, get_multivariate_fallback_message, explain_test_choice
 from app.stats_engine.registry import get_test, get_code_template
 from app.profiling.cache import get_cached_profile
+from app.db.aio import run_db
 from app.orchestrator.context_builder import format_context_for_prompt
 
 
 async def handle(message: str, session: Session, context: dict[str, Any], recent_messages: list[Message]) -> dict[str, Any]:
-    profile = get_cached_profile(str(session.id))
+    profile = await run_db(get_cached_profile, str(session.id))
     if not profile:
         return _text_result("I need your dataset profile first. Try again in a moment.", "inferential")
 

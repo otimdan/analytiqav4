@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from app.db.models import Session
 from app.db.artifacts import get_artifacts_for_session, get_completed_stages
+from app.db.aio import run_db
 from app.deps import get_current_session
 
 router = APIRouter(prefix="/artifacts", tags=["artifacts"])
@@ -8,7 +9,7 @@ router = APIRouter(prefix="/artifacts", tags=["artifacts"])
 
 @router.get("/{session_id}")
 async def list_artifacts(session_id: str, session: Session = Depends(get_current_session)) -> list:
-    artifacts = get_artifacts_for_session(session_id, include_superseded=False)
+    artifacts = await run_db(get_artifacts_for_session, session_id, include_superseded=False)
     return [
         {
             "id": str(a.id),
@@ -29,4 +30,4 @@ async def list_artifacts(session_id: str, session: Session = Depends(get_current
 
 @router.get("/{session_id}/stages")
 async def list_completed_stages(session_id: str, session: Session = Depends(get_current_session)) -> list[str]:
-    return get_completed_stages(session_id)
+    return await run_db(get_completed_stages, session_id)

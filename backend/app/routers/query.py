@@ -7,9 +7,11 @@ from datetime import datetime, timezone
 
 from app.db.models import Session, QueryRequest
 from app.db.sessions import get_session
+from app.db.aio import run_db
 from app.deps import get_current_session
 from app.orchestrator.pipeline import process_message
 from app.db.supabase_client import get_client
+from app.logging_config import logger
 
 router = APIRouter(prefix="/query", tags=["query"])
 
@@ -19,15 +21,15 @@ async def handle_query(req: QueryRequest, session: Session = Depends(get_current
     message_id = str(uuid4())
     now = datetime.now(timezone.utc)
 
-    get_client().table("messages").insert({
+    await run_db(lambda: get_client().table("messages").insert({
         "id": message_id, "session_id": str(session.id),
         "role": "user", "content": req.message, "created_at": now.isoformat(),
-    }).execute()
+    }).execute())
 
-    recent_result = (
+    recent_result = await run_db(lambda: (
         get_client().table("messages").select("*")
         .eq("session_id", str(session.id)).order("created_at", desc=False).limit(20).execute()
-    )
+    ))
 
     from app.db.models import Message
     recent_messages = [Message(**row) for row in recent_result.data]
@@ -67,24 +69,24 @@ async def handle_query(req: QueryRequest, session: Session = Depends(get_current
 
         except Exception as e:
             yield _sse_event({"type": "error", "content": "Something went wrong processing your request. Please try again."})
-            print(f"[query] Pipeline error: {e}")
+            logger.exception("Pipeline error while processing query: %s", e)
 
         finally:
             if assembled_text or executions:
                 full_response = "".join(assembled_text)
-                get_client().table("messages").insert({
+                await run_db(lambda: get_client().table("messages").insert({
                     "id": assistant_message_id,
                     "session_id": str(session.id), "role": "assistant",
                     "content": full_response, "regime": assembled_regime,
                     "created_at": datetime.now(timezone.utc).isoformat(),
-                }).execute()
+                }).execute())
                 # Persist executions in a separate update so a missing `executions`
                 # column (before the migration is applied) can't break message saving.
                 if executions:
                     try:
-                        get_client().table("messages").update({"executions": executions}).eq("id", assistant_message_id).execute()
+                        await run_db(lambda: get_client().table("messages").update({"executions": executions}).eq("id", assistant_message_id).execute())
                     except Exception as e:
-                        print(f"[query] Could not persist executions (apply the migration to enable): {e}")
+                        logger.warning("Could not persist executions (apply the migration to enable): %s", e)
             yield _sse_event({"type": "done", "message_id": assistant_message_id})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

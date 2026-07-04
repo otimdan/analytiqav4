@@ -7,6 +7,10 @@ FIREWORKS_API_KEY = os.getenv("FIREWORKS_API_KEY", "")
 FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1"
 FIREWORKS_MODEL_MAIN = os.getenv("FIREWORKS_MODEL_MAIN", "accounts/fireworks/models/kimi-k2p6")
 FIREWORKS_MODEL_CLASSIFIER = os.getenv("FIREWORKS_MODEL_CLASSIFIER", "accounts/fireworks/models/gpt-oss-120b")
+# Cheap conversational model for non-analytical regimes (advisory / pedagogy /
+# orientation). These regimes don't call tools or generate analysis code, so the
+# expensive tool-calling model (kimi-k2p6) is overkill. Defaults to gpt-oss-120b.
+FIREWORKS_MODEL_CHAT = os.getenv("FIREWORKS_MODEL_CHAT", "accounts/fireworks/models/gpt-oss-120b")
 
 E2B_API_KEY = os.getenv("E2B_API_KEY", "")
 

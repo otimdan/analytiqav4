@@ -4,6 +4,7 @@ from e2b_code_interpreter import Sandbox
 from app.config import E2B_API_KEY, SANDBOX_TIMEOUT_SECONDS
 from app.db.sessions import get_session, update_sandbox_id, clear_sandbox_id
 from app.db.artifacts import get_code_replay_sequence
+from app.logging_config import logger
 
 
 async def _ensure_dataset_mounted(sbx: Sandbox, session) -> None:
@@ -24,7 +25,7 @@ async def _ensure_dataset_mounted(sbx: Sandbox, session) -> None:
 
 
 async def get_or_create_sandbox(session_id: str) -> Sandbox:
-    session = get_session(session_id)
+    session = await asyncio.to_thread(get_session, session_id)
     if not session:
         raise ValueError(f"Session {session_id} not found")
 
@@ -41,7 +42,7 @@ async def get_or_create_sandbox(session_id: str) -> Sandbox:
 
 
 async def _create_and_mount(session_id: str) -> Sandbox:
-    session = get_session(session_id)
+    session = await asyncio.to_thread(get_session, session_id)
     if not session:
         raise ValueError(f"Session {session_id} not found")
 
@@ -63,13 +64,13 @@ async def _create_and_mount(session_id: str) -> Sandbox:
         try:
             await asyncio.to_thread(sbx.run_code, code_block)
         except Exception as e:
-            print(f"[sandbox/manager] Replay step failed for session {session_id}: {e}")
+            logger.warning("Replay step failed for session %s: %s", session_id, e)
 
     return sbx
 
 
 async def terminate_sandbox(session_id: str) -> None:
-    session = get_session(session_id)
+    session = await asyncio.to_thread(get_session, session_id)
     if not session or not session.sandbox_id:
         return
     try:

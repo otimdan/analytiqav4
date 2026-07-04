@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Any
 from app.db.artifacts import get_artifacts_for_session
 from app.db.sessions import get_session
+from app.db.aio import run_db
 from app.db.models import Artifact
 
 _STAGE_ORDER = ["data_preparation", "descriptive", "inferential", "visualisation", "interpretation"]
@@ -10,11 +11,11 @@ _STAGE_LABELS = {"data_preparation": "Data Preparation", "descriptive": "Descrip
 
 
 async def generate_report(session_id: str) -> dict[str, Any]:
-    session = get_session(session_id)
+    session = await run_db(get_session, session_id)
     if not session:
         raise ValueError(f"Session {session_id} not found")
 
-    artifacts = get_artifacts_for_session(session_id, include_superseded=False)
+    artifacts = await run_db(get_artifacts_for_session, session_id, include_superseded=False)
     if not artifacts:
         raise ValueError("No completed analyses found. Run some analyses first before generating a report.")
 

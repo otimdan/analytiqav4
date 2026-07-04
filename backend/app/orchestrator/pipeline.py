@@ -7,6 +7,7 @@ from app.db.models import Session, Message
 from app.db.sessions import increment_feedback_count, update_flags, get_session
 from app.db.artifacts import log_artifact, find_similar_artifact, mark_superseded
 from app.db.hypothesis_candidates import get_pending_candidate
+from app.db.aio import run_db
 from app.profiling.cache import get_cached_profile, profile_is_ready
 
 from app.orchestrator.classifier import classify_intent, is_off_topic
@@ -15,6 +16,7 @@ from app.orchestrator.context_builder import build_context
 from app.orchestrator.validator import validate_output, get_fallback_message
 
 from app.regimes import advisory, pedagogy, exploratory, confirmatory, orientation, meta
+from app.logging_config import logger
 
 
 async def process_message(
@@ -29,23 +31,23 @@ async def process_message(
         yield {"type": "text", "content": "I'm focused on data analysis — ask me something about your dataset.", "regime": "meta", "show_feedback": False}
         return
 
-    if not profile_is_ready(str(session.id)):
+    if not await run_db(profile_is_ready, str(session.id)):
         yield {"type": "text", "content": "Still analyzing your dataset — try again in a moment.", "regime": "meta", "show_feedback": False}
         return
 
-    has_pending = get_pending_candidate(str(session.id)) is not None
+    has_pending = await run_db(get_pending_candidate, str(session.id)) is not None
 
     classification_task = asyncio.create_task(classify_intent(message=message, recent_messages=recent_messages, has_pending_candidate=has_pending))
     hypothesis_task = asyncio.create_task(check_message_for_hypothesis(message=message, session=session, source_message_id=source_message_id, is_first_reply=is_first_reply))
 
     if not session.suggestion_mode and check_orientation_trigger(message):
-        update_flags(str(session.id), suggestion_mode=True)
+        await run_db(update_flags, str(session.id), suggestion_mode=True)
 
     classification, hypothesis_result = await asyncio.gather(classification_task, hypothesis_task)
     confirm_prompt = hypothesis_result.get("confirm_prompt")
 
-    updated_session = get_session(str(session.id)) or session
-    context = build_context(session=updated_session, recent_messages=recent_messages)
+    updated_session = await run_db(get_session, str(session.id)) or session
+    context = await run_db(build_context, session=updated_session, recent_messages=recent_messages)
 
     regime = classification.regime
     needs_disambiguation = classification.needs_disambiguation
@@ -75,7 +77,7 @@ async def process_message(
             yield shortcut
             if confirm_prompt:
                 yield {"type": "confirmation_prompt", "content": confirm_prompt, "regime": "meta", "show_feedback": False}
-            new_count = increment_feedback_count(str(session.id))
+            new_count = await run_db(increment_feedback_count, str(session.id))
             yield {"type": "meta", "show_feedback": new_count % FEEDBACK_EVERY_N_TURNS == 0}
             return
 
@@ -84,7 +86,7 @@ async def process_message(
     validation = validate_output(regime=regime, response_text=raw_result.get("text", ""), artifact_content=raw_result.get("artifact_content"), has_images=bool(raw_result.get("images")))
 
     if not validation.passed:
-        print(f"[pipeline] Validation failed for regime={regime}: {validation.failure_reason}")
+        logger.warning("Validation failed for regime=%s: %s", regime, validation.failure_reason)
         yield {"type": "text", "content": get_fallback_message(regime, validation.failure_reason or ""), "regime": regime, "show_feedback": False}
         return
 
@@ -93,7 +95,7 @@ async def process_message(
         artifact = await _log_artifact(raw_result=raw_result, session_id=str(session.id), message_id=source_message_id, regime=regime)
         artifact_id = str(artifact.id) if artifact else None
 
-    new_count = increment_feedback_count(str(session.id))
+    new_count = await run_db(increment_feedback_count, str(session.id))
     show_feedback = new_count % FEEDBACK_EVERY_N_TURNS == 0
 
     for execution in raw_result.get("executions", []):
@@ -138,13 +140,13 @@ async def _check_execution_needed(message, session_id, context) -> dict[str, Any
         if re.search(pat, message, re.IGNORECASE):
             return {"type": "text", "content": context.get("profile_summary", ""), "regime": "advisory", "show_feedback": False, "shortcut": "profile"}
 
-    profile = get_cached_profile(session_id)
+    profile = await run_db(get_cached_profile, session_id)
     if not profile:
         return None
 
     mentioned_columns = [col for col in profile.get("columns", {}).keys() if col.lower() in message.lower()]
     if len(mentioned_columns) >= 2:
-        existing = find_similar_artifact(session_id=session_id, stage="exploratory", artifact_type="chart", variables_involved=mentioned_columns)
+        existing = await run_db(find_similar_artifact, session_id=session_id, stage="exploratory", artifact_type="chart", variables_involved=mentioned_columns)
         if existing:
             return {"type": "cached_artifact", "content": f"Here's the previous result for {' and '.join(mentioned_columns)} — want me to run it fresh?", "artifact_id": str(existing.id), "regime": "exploratory", "show_feedback": False, "shortcut": "cached_artifact"}
     return None
@@ -158,10 +160,10 @@ async def _log_artifact(raw_result, session_id, message_id, regime) -> Any:
         return None
 
     if variables:
-        existing = find_similar_artifact(session_id=session_id, stage=stage, artifact_type=artifact_type, variables_involved=variables)
-        new_artifact = log_artifact(session_id=session_id, stage=stage, artifact_type=artifact_type, content=raw_result.get("artifact_content", {}), message_id=message_id, code_used=raw_result.get("code_used"), variables_involved=variables)
+        existing = await run_db(find_similar_artifact, session_id=session_id, stage=stage, artifact_type=artifact_type, variables_involved=variables)
+        new_artifact = await run_db(log_artifact, session_id=session_id, stage=stage, artifact_type=artifact_type, content=raw_result.get("artifact_content", {}), message_id=message_id, code_used=raw_result.get("code_used"), variables_involved=variables)
         if existing:
-            mark_superseded(str(existing.id), str(new_artifact.id))
+            await run_db(mark_superseded, str(existing.id), str(new_artifact.id))
         return new_artifact
 
-    return log_artifact(session_id=session_id, stage=stage, artifact_type=artifact_type, content=raw_result.get("artifact_content", {}), message_id=message_id, code_used=raw_result.get("code_used"), variables_involved=variables)
+    return await run_db(log_artifact, session_id=session_id, stage=stage, artifact_type=artifact_type, content=raw_result.get("artifact_content", {}), message_id=message_id, code_used=raw_result.get("code_used"), variables_involved=variables)
