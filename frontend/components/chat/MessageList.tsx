@@ -16,10 +16,11 @@ interface MessageListProps {
   isStreaming: boolean
   onOptionSelect: (messageId: string, option: string) => void
   onGuidanceAccept: (messageId: string) => void
+  onGuidanceRun: (query: string) => void
   onFeedbackDismiss: (messageId: string) => void
 }
 
-export function MessageList({ messages, sessionId, suggestionMode, isStreaming, onOptionSelect, onGuidanceAccept, onFeedbackDismiss }: MessageListProps) {
+export function MessageList({ messages, sessionId, suggestionMode, isStreaming, onOptionSelect, onGuidanceAccept, onGuidanceRun, onFeedbackDismiss }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }) }, [messages, isStreaming])
 
@@ -36,7 +37,7 @@ export function MessageList({ messages, sessionId, suggestionMode, isStreaming, 
             {message.role === "assistant" && message.executions && message.executions.length > 0 && (
               <CodeExecutionBlock executions={message.executions} />
             )}
-            {message.images.map((img, i) => <ChartCard key={i} imageBase64={img} />)}
+            {message.images.map((img, i) => <ChartCard key={i} imageBase64={img.src} caption={img.caption} />)}
             {message.report && <ReportCard report={message.report} />}
             {message.disambiguation && (
               <DisambiguationPrompt question={message.disambiguation.question} options={message.disambiguation.options} onSelect={(opt) => onOptionSelect(message.id, opt)} />
@@ -45,7 +46,13 @@ export function MessageList({ messages, sessionId, suggestionMode, isStreaming, 
               <DisambiguationPrompt question={message.confirmation_prompt} options={["Track as project", "No, just answer this"]} onSelect={(opt) => onOptionSelect(message.id, opt)} />
             )}
             {suggestionMode && message.guidance_suggestion && message.role === "assistant" && (
-              <GuidanceSuggestion suggestion={message.guidance_suggestion} isHypothesisCandidate={message.is_hypothesis_candidate} onAccept={() => onGuidanceAccept(message.id)} />
+              <GuidanceSuggestion
+                suggestion={message.guidance_suggestion}
+                isHypothesisCandidate={message.is_hypothesis_candidate}
+                nextAction={message.guidance_next_action}
+                onAccept={() => onGuidanceAccept(message.id)}
+                onRun={onGuidanceRun}
+              />
             )}
             {message.show_feedback && message.role === "assistant" && (message.server_message_id || message.id) && (
               <FeedbackRating sessionId={sessionId} messageId={message.server_message_id ?? message.id} onDismiss={() => onFeedbackDismiss(message.id)} />

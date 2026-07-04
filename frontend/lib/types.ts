@@ -36,9 +36,20 @@ export interface CodeExecution {
   output: string
 }
 
+export interface ChartImage {
+  src: string
+  caption?: string
+}
+
+export interface NextAction {
+  label: string
+  query: string
+}
+
 export interface StreamChunk {
   type: ChunkType
   content?: string
+  caption?: string
   regime?: string
   artifact_id?: string
   show_feedback?: boolean
@@ -47,6 +58,7 @@ export interface StreamChunk {
   message_id?: string
   prompt?: { question: string; options: string[] }
   is_hypothesis_candidate?: boolean
+  next_action?: NextAction | null
   report?: { markdown: string; filename: string; artifact_count: number; stages_covered: string[] }
   route_to?: string
   shortcut?: "profile" | "cached_artifact"
@@ -56,13 +68,14 @@ export interface Message {
   id: string
   role: MessageRole
   content: string
-  images: string[]
+  images: ChartImage[]
   regime?: string
   artifact_id?: string
   show_feedback?: boolean
   disambiguation?: { question: string; options: string[] }
   confirmation_prompt?: string
   guidance_suggestion?: string
+  guidance_next_action?: NextAction | null
   is_hypothesis_candidate?: boolean
   report?: StreamChunk["report"]
   executions?: CodeExecution[]

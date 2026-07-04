@@ -28,6 +28,7 @@ class ConfirmatoryNarration(BaseModel):
 class OrientationRecap(BaseModel):
     what_has_been_done: list[str]
     suggested_next: str
+    next_step_query: Optional[str] = None  # a concrete instruction the user could run verbatim
     is_hypothesis_candidate: bool = False
     candidate_hypothesis_text: Optional[str] = None
 

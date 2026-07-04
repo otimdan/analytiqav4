@@ -84,14 +84,16 @@ async def handle(message: str, session: Session, context: dict[str, Any], recent
         response_text += f"\n\n⚠️ Note: {narration.suspect_reason}"
 
     suggested_next = None
+    next_action = None
     if context.get("suggestion_mode"):
         if p_value is not None and p_value < 0.05:
             suggested_next = "The result is significant — want me to visualize the difference between groups?"
+            next_action = {"label": "Visualize it", "query": f"Plot {var_a} by {var_b}"}
         else:
             suggested_next = "Want to explore other variables or check a different relationship?"
 
     executions = [{"code": generated_code, "output": stdout.rstrip() or "(no output)"}]
-    return {"text": response_text, "images": exec_result.get("images", []), "artifact_content": artifact_content, "artifact_type": "test_result", "stage": "inferential", "variables_involved": [var_a, var_b], "code_used": generated_code, "executions": executions, "suggested_next": suggested_next, "is_hypothesis_candidate": False}
+    return {"text": response_text, "images": exec_result.get("images", []), "artifact_content": artifact_content, "artifact_type": "test_result", "stage": "inferential", "variables_involved": [var_a, var_b], "code_used": generated_code, "executions": executions, "suggested_next": suggested_next, "next_action": next_action, "is_hypothesis_candidate": False}
 
 
 def _extract_variables(message, profile):

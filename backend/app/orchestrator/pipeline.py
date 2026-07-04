@@ -104,14 +104,15 @@ async def process_message(
     if validation.cleaned_text:
         yield {"type": "text", "content": validation.cleaned_text, "regime": regime, "artifact_id": artifact_id, "show_feedback": show_feedback}
 
+    chart_caption = raw_result.get("chart_caption")
     for image_b64 in raw_result.get("images", []):
-        yield {"type": "image", "content": image_b64, "regime": regime, "show_feedback": False}
+        yield {"type": "image", "content": image_b64, "caption": chart_caption, "regime": regime, "show_feedback": False}
 
     if confirm_prompt:
         yield {"type": "confirmation_prompt", "content": confirm_prompt, "regime": "meta", "show_feedback": False}
 
     if updated_session.suggestion_mode and raw_result.get("suggested_next"):
-        yield {"type": "guidance_suggestion", "content": raw_result["suggested_next"], "is_hypothesis_candidate": raw_result.get("is_hypothesis_candidate", False), "regime": regime, "show_feedback": False}
+        yield {"type": "guidance_suggestion", "content": raw_result["suggested_next"], "next_action": raw_result.get("next_action"), "is_hypothesis_candidate": raw_result.get("is_hypothesis_candidate", False), "regime": regime, "show_feedback": False}
 
 
 async def _dispatch(regime, message, session, context, recent_messages) -> dict[str, Any]:

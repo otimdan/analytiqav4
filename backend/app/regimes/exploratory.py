@@ -9,6 +9,9 @@ from app.sandbox.manager import get_or_create_sandbox
 from app.sandbox.executor import execute_code, build_tool_result_string
 from app.sandbox.repair import attempt_repair
 from app.orchestrator.context_builder import format_context_for_prompt
+from app.profiling.cache import get_cached_profile
+from app.stats_engine.chart_selector import recommend_chart
+from app.db.aio import run_db
 
 _EXECUTE_CODE_TOOL = {
     "type": "function",
@@ -23,10 +26,28 @@ _EXECUTE_CODE_TOOL = {
 async def handle(message: str, session: Session, context: dict[str, Any], recent_messages: list[Message]) -> dict[str, Any]:
     sbx = await get_or_create_sandbox(str(session.id))
     context_block = format_context_for_prompt(context)
+
+    # Deliberate "plot X vs Y" flow: when the user explicitly asks for a chart,
+    # pick an appropriate chart type from the mentioned columns' types and steer
+    # the model toward it, so visualizations are reliable and well-formed rather
+    # than incidental.
+    chart_rec = None
+    plot_directive = ""
+    if _is_plot_request(message):
+        profile = await run_db(get_cached_profile, str(session.id))
+        if profile:
+            mentioned = _extract_mentioned_columns(message, context.get("profile_summary", ""))
+            chart_rec = recommend_chart(mentioned, profile)
+        if chart_rec:
+            plot_directive = f"\n\nThe user wants a visualization. {chart_rec.directive} You MUST produce this chart."
+        else:
+            plot_directive = "\n\nThe user wants a visualization — produce a clear, well-labeled chart appropriate to the variables."
+
     messages = []
     for turn in context["recent_turns"]:
         messages.append(turn)
-    messages.append({"role": "user", "content": f"{context_block}\n\n{message}" if not messages else message})
+    user_content = f"{context_block}\n\n{message}{plot_directive}" if not messages else f"{message}{plot_directive}"
+    messages.append({"role": "user", "content": user_content})
 
     steps = 0
     all_images: list[str] = []
@@ -75,20 +96,28 @@ async def handle(message: str, session: Session, context: dict[str, Any], recent
     stage = "visualisation" if all_images else "descriptive"
     variables = _extract_mentioned_columns(message, context.get("profile_summary", ""))
 
+    chart_type = chart_rec.chart_type if chart_rec else _infer_chart_type(all_code_blocks)
+    chart_caption = chart_rec.rationale if chart_rec else None
+    if chart_rec and chart_rec.columns:
+        variables = chart_rec.columns
+
     artifact_content = None
     artifact_type = None
     if all_images:
         artifact_type = "chart"
-        artifact_content = {"chart_type": _infer_chart_type(all_code_blocks), "variables": variables, "image_count": len(all_images)}
+        artifact_content = {"chart_type": chart_type, "variables": variables, "image_count": len(all_images)}
     elif final_text and len(final_text) > 100:
         artifact_type = "summary"
         artifact_content = {"text_preview": final_text[:500], "variables": variables}
 
     suggested_next = None
+    next_action = None
     if context.get("suggestion_mode") and all_images:
         suggested_next = "Want to test whether that pattern is statistically significant?"
+        if len(variables) >= 2:
+            next_action = {"label": "Run the test", "query": f"Run a statistical test on {variables[0]} and {variables[1]}"}
 
-    return {"text": final_text, "images": all_images, "artifact_content": artifact_content, "artifact_type": artifact_type, "stage": stage, "variables_involved": variables, "code_used": code_used, "executions": executions, "suggested_next": suggested_next, "is_hypothesis_candidate": False}
+    return {"text": final_text, "images": all_images, "artifact_content": artifact_content, "artifact_type": artifact_type, "stage": stage, "variables_involved": variables, "code_used": code_used, "executions": executions, "chart_caption": chart_caption, "suggested_next": suggested_next, "next_action": next_action, "is_hypothesis_candidate": False}
 
 
 def _format_execution_output(exec_result: dict) -> str:
@@ -109,6 +138,19 @@ def _make_repair_fn(session: Session):
         response = await call_main_model(messages=[{"role": "user", "content": prompt}], system_prompt="You are a Python debugging assistant. Return only corrected Python code.", tools=None, temperature=temperature)
         return response.message.content or original_code
     return repair_fn
+
+
+_PLOT_REQUEST_RE = re.compile(
+    r"\b(plot|chart|graph|visuali[sz]e|visuali[sz]ation|scatter|histogram|hist\b|"
+    r"bar ?chart|box ?plot|boxplot|heatmap|line ?chart|pie ?chart|"
+    r"show me (a|the)?\s*(chart|graph|plot|distribution|trend)|"
+    r"draw (a|me)?|display (a|the)?\s*(chart|graph|plot))\b",
+    re.IGNORECASE,
+)
+
+
+def _is_plot_request(message: str) -> bool:
+    return bool(_PLOT_REQUEST_RE.search(message))
 
 
 def _infer_chart_type(code_blocks):

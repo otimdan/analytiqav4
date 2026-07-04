@@ -4,7 +4,18 @@ from e2b_code_interpreter import Sandbox
 from app.config import E2B_API_KEY, SANDBOX_TIMEOUT_SECONDS
 from app.db.sessions import get_session, update_sandbox_id, clear_sandbox_id
 from app.db.artifacts import get_code_replay_sequence
+from app.sandbox.chart_theme import CHART_THEME_BOOTSTRAP
 from app.logging_config import logger
+
+
+async def _apply_chart_theme(sbx: Sandbox) -> None:
+    """Set the shared matplotlib theme in the sandbox kernel. rcParams persist
+    for the kernel's lifetime, so this only needs to run once per connection —
+    it's cheap and idempotent, so we run it on both create and reconnect."""
+    try:
+        await asyncio.to_thread(sbx.run_code, CHART_THEME_BOOTSTRAP)
+    except Exception as e:
+        logger.warning("Could not apply chart theme: %s", e)
 
 
 async def _ensure_dataset_mounted(sbx: Sandbox, session) -> None:
@@ -34,6 +45,7 @@ async def get_or_create_sandbox(session_id: str) -> Sandbox:
             sbx = await asyncio.to_thread(Sandbox.connect, session.sandbox_id, api_key=E2B_API_KEY)
             await asyncio.to_thread(sbx.run_code, "1+1")
             await _ensure_dataset_mounted(sbx, session)
+            await _apply_chart_theme(sbx)
             return sbx
         except Exception:
             pass
@@ -54,6 +66,7 @@ async def _create_and_mount(session_id: str) -> Sandbox:
     )
 
     await asyncio.to_thread(update_sandbox_id, session_id, sbx.sandbox_id)
+    await _apply_chart_theme(sbx)
 
     if session.dataset_csv:
         await asyncio.to_thread(sbx.files.write, "/home/user/data.csv", session.dataset_csv)

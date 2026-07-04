@@ -64,10 +64,10 @@ export default function AnalysisPage() {
           const msg = { ...updated[idx] }
           switch (chunk.type) {
             case "text": msg.content += chunk.content || ""; msg.regime = chunk.regime; if (chunk.show_feedback) msg.show_feedback = true; break
-            case "image": msg.images = [...msg.images, chunk.content || ""]; break
+            case "image": msg.images = [...msg.images, { src: chunk.content || "", caption: chunk.caption }]; break
             case "disambiguation": msg.disambiguation = chunk.prompt; break
             case "confirmation_prompt": msg.confirmation_prompt = chunk.content; break
-            case "guidance_suggestion": msg.guidance_suggestion = chunk.content; msg.is_hypothesis_candidate = chunk.is_hypothesis_candidate; break
+            case "guidance_suggestion": msg.guidance_suggestion = chunk.content; msg.guidance_next_action = chunk.next_action; msg.is_hypothesis_candidate = chunk.is_hypothesis_candidate; break
             case "report": msg.report = chunk.report; break
             case "code_execution": msg.executions = [...(msg.executions ?? []), { code: chunk.code || "", output: chunk.output || "" }]; break
             case "done": if (chunk.message_id) msg.server_message_id = chunk.message_id; break
@@ -128,7 +128,7 @@ export default function AnalysisPage() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-white">
-      {guidance.hypothesis_on_record && <StepRail completedStages={completedStages} />}
+      {guidance.hypothesis_on_record && <StepRail completedStages={completedStages} hypothesisText={guidance.hypothesis_text} />}
       <div className="flex flex-1 flex-col overflow-hidden">
         <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-2">
           <span className="text-xs text-gray-400">{sessionState?.dataset_filename}</span>
@@ -141,6 +141,7 @@ export default function AnalysisPage() {
             sessionId={sessionId} suggestionMode={guidance.suggestion_mode} isStreaming={isStreaming}
             onOptionSelect={(_, opt) => handleSend(opt)}
             onGuidanceAccept={() => handleSend("Track as project")}
+            onGuidanceRun={(query) => handleSend(query)}
             onFeedbackDismiss={(id) => setDismissedFeedback((prev) => new Set([...prev, id]))}
           />
           <StreamingOutput isVisible={isStreaming} />

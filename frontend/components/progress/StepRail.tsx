@@ -2,9 +2,15 @@
 import type { ArtifactStage } from "@/lib/types"
 import { RAIL_STAGES } from "@/lib/types"
 
-export function StepRail({ completedStages }: { completedStages: Set<ArtifactStage> }) {
+export function StepRail({ completedStages, hypothesisText }: { completedStages: Set<ArtifactStage>; hypothesisText?: string | null }) {
   return (
     <div className="flex w-48 shrink-0 flex-col gap-1 border-r border-gray-100 bg-gray-50 px-4 py-6">
+      {hypothesisText && (
+        <div className="mb-4 rounded-lg border border-indigo-100 bg-white px-3 py-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-400">Project</p>
+          <p className="mt-1 text-xs leading-snug text-gray-600">{hypothesisText}</p>
+        </div>
+      )}
       <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Progress</p>
       {RAIL_STAGES.map((stage, index) => {
         const isCompleted = completedStages.has(stage.key)
