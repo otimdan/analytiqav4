@@ -18,6 +18,10 @@ SANDBOX_TIMEOUT_SECONDS = int(os.getenv("SANDBOX_TIMEOUT_SECONDS", "3600"))
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+# Optional LEGACY fallback only. This project verifies user tokens via the JWKS
+# endpoint (asymmetric ES256 signing keys) using SUPABASE_URL — no secret needed.
+# Set this only if you still issue legacy HS256 tokens and want them accepted.
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
 
 MAX_STEPS = int(os.getenv("MAX_STEPS", "10"))
 MAX_RETRY_ATTEMPTS = int(os.getenv("MAX_RETRY_ATTEMPTS", "3"))

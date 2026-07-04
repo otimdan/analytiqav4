@@ -8,6 +8,10 @@ python-multipart==0.0.9
 # ── Environment ───────────────────────────────────────────────
 python-dotenv==1.0.1
 
+# ── Auth (verify Supabase JWTs) ───────────────────────────────
+PyJWT==2.9.0
+cryptography>=43.0.0  # required by PyJWT to verify ES256 (asymmetric signing keys)
+
 # ── Data validation ───────────────────────────────────────────
 pydantic==2.8.2
 pydantic-settings==2.4.0

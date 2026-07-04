@@ -4,6 +4,7 @@ from app.db.sessions import get_session, create_session as db_create_session
 from app.db.artifacts import get_artifacts_for_session
 from app.db.aio import run_db
 from app.deps import get_current_session
+from app.auth import get_current_user, AuthUser
 from app.profiling.profiler import build_profile
 from app.profiling.cache import set_cached_profile
 from app.sandbox.manager import get_or_create_sandbox, terminate_sandbox
@@ -14,7 +15,7 @@ router = APIRouter(prefix="/session", tags=["session"])
 
 
 @router.post("/upload", response_model=UploadResponse)
-async def upload_dataset(file: UploadFile = File(...)) -> UploadResponse:
+async def upload_dataset(file: UploadFile = File(...), user: AuthUser = Depends(get_current_user)) -> UploadResponse:
     if not file.filename or not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are accepted.")
 
@@ -31,7 +32,7 @@ async def upload_dataset(file: UploadFile = File(...)) -> UploadResponse:
     if len(lines) < 2:
         raise HTTPException(status_code=400, detail="The file appears to be empty or has only headers.")
 
-    session = await run_db(db_create_session, dataset_filename=file.filename, dataset_csv=csv_text)
+    session = await run_db(db_create_session, dataset_filename=file.filename, dataset_csv=csv_text, user_id=user.id)
     sbx = await get_or_create_sandbox(str(session.id))
 
     try:
@@ -64,9 +65,9 @@ async def upload_dataset(file: UploadFile = File(...)) -> UploadResponse:
 
 
 @router.get("/{session_id}/state", response_model=SessionStateResponse)
-async def get_session_state(session_id: str) -> SessionStateResponse:
+async def get_session_state(session_id: str, user: AuthUser = Depends(get_current_user)) -> SessionStateResponse:
     session = await run_db(get_session, session_id)
-    if not session:
+    if not session or str(session.user_id) != user.id:
         raise HTTPException(status_code=404, detail="Session not found.")
 
     artifacts = await run_db(get_artifacts_for_session, session_id, include_superseded=False)
@@ -88,9 +89,9 @@ async def get_session_state(session_id: str) -> SessionStateResponse:
 
 
 @router.get("/{session_id}/messages")
-async def get_session_messages(session_id: str) -> list[dict]:
+async def get_session_messages(session_id: str, user: AuthUser = Depends(get_current_user)) -> list[dict]:
     session = await run_db(get_session, session_id)
-    if not session:
+    if not session or str(session.user_id) != user.id:
         raise HTTPException(status_code=404, detail="Session not found.")
 
     result = await run_db(lambda: (
@@ -112,6 +113,9 @@ async def get_session_messages(session_id: str) -> list[dict]:
 
 @router.post("/{session_id}/close")
 async def close_session(session_id: str) -> dict:
+    # Intentionally unauthenticated: called via navigator.sendBeacon on page
+    # unload, which cannot attach an Authorization header. It only releases a
+    # sandbox handle keyed by an unguessable UUID.
     session = await run_db(get_session, session_id)
     if session:
         await terminate_sandbox(session_id)
@@ -120,10 +124,13 @@ async def close_session(session_id: str) -> dict:
 
 @router.post("/{session_id}/reset")
 async def reset_conversation(session_id: str, session: Session = Depends(get_current_session)) -> dict:
-    await run_db(lambda: get_client().table("messages").delete().eq("session_id", session_id).execute())
+    # Operate on the verified-owned session (from get_current_session), not the
+    # raw path param, so a caller can't reset a session they don't own.
+    owned_id = str(session.id)
+    await run_db(lambda: get_client().table("messages").delete().eq("session_id", owned_id).execute())
     first_message = await run_db(get_first_message, session)
     await run_db(lambda: get_client().table("messages").insert({
-        "session_id": session_id, "role": "assistant",
+        "session_id": owned_id, "role": "assistant",
         "content": first_message, "regime": "meta", "classification_confidence": "rule_based",
     }).execute())
     return {"ok": True}

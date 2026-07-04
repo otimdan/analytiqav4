@@ -1,4 +1,5 @@
 import type { StreamChunk } from "./types"
+import { authHeader } from "./supabase/token"
 
 export type ChunkHandler = (chunk: StreamChunk) => void
 export type ErrorHandler = (error: Error) => void
@@ -17,7 +18,7 @@ export async function streamQuery(
   try {
     response = await fetch(`${BASE_URL}/query`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Session-Id": sessionId },
+      headers: { "Content-Type": "application/json", "X-Session-Id": sessionId, ...(await authHeader()) },
       body: JSON.stringify({ session_id: sessionId, message }),
     })
   } catch {
