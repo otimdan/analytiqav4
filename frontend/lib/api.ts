@@ -1,4 +1,5 @@
 import type { UploadResponse, SessionState, FeedbackRequest, Artifact, MessageHistoryItem } from "./types"
+import { authHeader } from "./supabase/token"
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
@@ -6,6 +7,7 @@ async function apiFetch<T>(path: string, options: RequestInit & { sessionId?: st
   const { sessionId, ...fetchOptions } = options
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    ...(await authHeader()),
     ...(fetchOptions.headers as Record<string, string>),
   }
   if (sessionId) headers["X-Session-Id"] = sessionId
@@ -21,7 +23,7 @@ async function apiFetch<T>(path: string, options: RequestInit & { sessionId?: st
 export async function uploadDataset(file: File): Promise<UploadResponse> {
   const form = new FormData()
   form.append("file", file)
-  const res = await fetch(`${BASE_URL}/session/upload`, { method: "POST", body: form })
+  const res = await fetch(`${BASE_URL}/session/upload`, { method: "POST", body: form, headers: await authHeader() })
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: "Upload failed" }))
     throw new Error(error.detail || "Upload failed")

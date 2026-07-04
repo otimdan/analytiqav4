@@ -6,12 +6,13 @@ from app.db.supabase_client import get_client
 from app.db.models import Session
 
 
-def create_session(dataset_filename: str, dataset_csv: str) -> Session:
+def create_session(dataset_filename: str, dataset_csv: str, user_id: Optional[str] = None) -> Session:
     client = get_client()
     now = datetime.now(timezone.utc)
     session_id = str(uuid4())
     row = {
         "id": session_id,
+        "user_id": user_id,
         "created_at": now.isoformat(),
         "last_active_at": now.isoformat(),
         "dataset_filename": dataset_filename,

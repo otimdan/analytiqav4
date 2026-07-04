@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 class Session(BaseModel):
     id: UUID = Field(default_factory=uuid4)
+    user_id: Optional[UUID] = None
     created_at: datetime
     last_active_at: datetime
     dataset_filename: Optional[str] = None

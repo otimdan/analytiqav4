@@ -11,6 +11,7 @@ import { MessageList } from "@/components/chat/MessageList"
 import { StreamingOutput } from "@/components/chat/StreamingOutput"
 import { StepRail } from "@/components/progress/StepRail"
 import { ArtifactHistory } from "@/components/artifacts/ArtifactHistory"
+import { AccountMenu } from "@/components/auth/AccountMenu"
 
 function nanoid() { return crypto.randomUUID() }
 
@@ -130,10 +131,13 @@ export default function AnalysisPage() {
     <div className="flex h-screen overflow-hidden bg-white">
       {guidance.hypothesis_on_record && <StepRail completedStages={completedStages} hypothesisText={guidance.hypothesis_text} />}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-2">
-          <span className="text-xs text-gray-400">{sessionState?.dataset_filename}</span>
-          <span className="text-xs text-gray-300">·</span>
-          <span className="text-xs text-gray-400">{sessionState?.profile_summary?.row_count} rows</span>
+        <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-4 py-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-400">{sessionState?.dataset_filename}</span>
+            <span className="text-xs text-gray-300">·</span>
+            <span className="text-xs text-gray-400">{sessionState?.profile_summary?.row_count} rows</span>
+          </div>
+          <AccountMenu />
         </div>
         <div className="flex-1 overflow-y-auto">
           <MessageList
