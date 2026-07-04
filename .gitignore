@@ -1,0 +1,35 @@
+# ---- Secrets (NEVER commit) ----
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+
+# ---- Python (backend) ----
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.tsbuildinfo
+
+# ---- Node / Next.js (frontend) ----
+node_modules/
+.next/
+out/
+dist/
+build/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ---- Editor / OS ----
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.log
