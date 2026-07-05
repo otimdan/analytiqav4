@@ -30,6 +30,16 @@ TOKEN_LIMIT = int(os.getenv("TOKEN_LIMIT", "60000"))
 SESSION_IDLE_TIMEOUT_MINUTES = int(os.getenv("SESSION_IDLE_TIMEOUT_MINUTES", "15"))
 FEEDBACK_EVERY_N_TURNS = int(os.getenv("FEEDBACK_EVERY_N_TURNS", "3"))
 
+# ── CORS ──────────────────────────────────────────────────────
+# Comma-separated list of allowed frontend origins (NO custom domain required —
+# use the localhost default for dev, add your deploy URL, e.g.
+# https://your-app.vercel.app, at launch).
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",") if o.strip()]
+
+# ── Rate limits (per user, per minute) ────────────────────────
+QUERY_RATE_PER_MIN = int(os.getenv("QUERY_RATE_PER_MIN", "20"))
+UPLOAD_RATE_PER_MIN = int(os.getenv("UPLOAD_RATE_PER_MIN", "10"))
+
 CHI_SQUARE_MIN_EXPECTED_CELL = int(os.getenv("CHI_SQUARE_MIN_EXPECTED_CELL", "5"))
 MIN_SAMPLE_SIZE_PER_GROUP = int(os.getenv("MIN_SAMPLE_SIZE_PER_GROUP", "20"))
 
