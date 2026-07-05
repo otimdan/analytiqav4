@@ -1,4 +1,4 @@
-import type { UploadResponse, SessionState, FeedbackRequest, Artifact, MessageHistoryItem, UsageSummary, Plan } from "./types"
+import type { UploadResponse, SessionState, FeedbackRequest, Artifact, MessageHistoryItem, UsageSummary, Plan, TaskSummary } from "./types"
 import { authHeader } from "./supabase/token"
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
@@ -45,6 +45,18 @@ export async function closeSession(sessionId: string): Promise<void> {
 
 export async function resetConversation(sessionId: string): Promise<void> {
   await apiFetch(`/session/${sessionId}/reset`, { method: "POST", sessionId })
+}
+
+export async function listTasks(): Promise<TaskSummary[]> {
+  return apiFetch<TaskSummary[]>("/session/list")
+}
+
+export async function renameTask(sessionId: string, title: string): Promise<void> {
+  await apiFetch(`/session/${sessionId}/title`, { method: "POST", sessionId, body: JSON.stringify({ title }) })
+}
+
+export async function deleteTask(sessionId: string): Promise<void> {
+  await apiFetch(`/session/${sessionId}/delete`, { method: "POST", sessionId })
 }
 
 export async function getArtifacts(sessionId: string): Promise<Artifact[]> {

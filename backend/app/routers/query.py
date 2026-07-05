@@ -48,6 +48,7 @@ async def handle_query(req: QueryRequest, session: Session = Depends(get_current
         assembled_text = []
         assembled_regime = "exploratory"
         executions: list[dict] = []
+        images: list[dict] = []
 
         try:
             async for chunk in process_message(
@@ -65,6 +66,8 @@ async def handle_query(req: QueryRequest, session: Session = Depends(get_current
                 else:
                     if chunk_type == "code_execution":
                         executions.append({"code": chunk.get("code", ""), "output": chunk.get("output", "")})
+                    elif chunk_type == "image":
+                        images.append({"src": chunk.get("content", ""), "caption": chunk.get("caption")})
                     yield _sse_event(chunk)
 
             remaining = stream_buffer.flush()
@@ -77,7 +80,7 @@ async def handle_query(req: QueryRequest, session: Session = Depends(get_current
             logger.exception("Pipeline error while processing query: %s", e)
 
         finally:
-            if assembled_text or executions:
+            if assembled_text or executions or images:
                 full_response = "".join(assembled_text)
                 await run_db(lambda: get_client().table("messages").insert({
                     "id": assistant_message_id,
@@ -85,13 +88,18 @@ async def handle_query(req: QueryRequest, session: Session = Depends(get_current
                     "content": full_response, "regime": assembled_regime,
                     "created_at": datetime.now(timezone.utc).isoformat(),
                 }).execute())
-                # Persist executions in a separate update so a missing `executions`
-                # column (before the migration is applied) can't break message saving.
+                # Persist executions/images in separate updates so a missing column
+                # (before the migration is applied) can't break message saving.
                 if executions:
                     try:
                         await run_db(lambda: get_client().table("messages").update({"executions": executions}).eq("id", assistant_message_id).execute())
                     except Exception as e:
                         logger.warning("Could not persist executions (apply the migration to enable): %s", e)
+                if images:
+                    try:
+                        await run_db(lambda: get_client().table("messages").update({"images": images}).eq("id", assistant_message_id).execute())
+                    except Exception as e:
+                        logger.warning("Could not persist images (apply the migration to enable): %s", e)
             yield _sse_event({"type": "done", "message_id": assistant_message_id})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

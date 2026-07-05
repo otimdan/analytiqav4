@@ -27,6 +27,13 @@ def create_session(dataset_filename: str, dataset_csv: str, user_id: Optional[st
         "feedback_count": 0,
     }
     result = client.table("sessions").insert(row).execute()
+    # Best-effort title (sidebar label). Separate update so a missing `title`
+    # column (before migration 005) can't break dataset upload.
+    if dataset_filename:
+        try:
+            client.table("sessions").update({"title": dataset_filename}).eq("id", session_id).execute()
+        except Exception:
+            pass
     return Session(**result.data[0])
 
 
@@ -105,3 +112,38 @@ def clear_dataset(session_id: str) -> None:
         "dataset_csv": None,
         "sandbox_id": None,
     }).eq("id", session_id).execute()
+
+
+def get_sessions_for_user(user_id: str) -> list[dict[str, Any]]:
+    # Lightweight list for the sidebar — deliberately omits dataset_csv (large).
+    # dataset_ready lets the UI distinguish resumable tasks from wiped ones.
+    client = get_client()
+    result = (
+        client.table("sessions")
+        .select("id, title, dataset_filename, created_at, last_active_at, dataset_csv")
+        .eq("user_id", user_id)
+        .order("last_active_at", desc=True)
+        .execute()
+    )
+    return [
+        {
+            "id": row["id"],
+            "title": row.get("title") or row.get("dataset_filename") or "Untitled task",
+            "dataset_filename": row.get("dataset_filename"),
+            "created_at": row.get("created_at"),
+            "last_active_at": row.get("last_active_at"),
+            "dataset_ready": bool(row.get("dataset_csv")),
+        }
+        for row in result.data
+    ]
+
+
+def update_title(session_id: str, title: str) -> None:
+    client = get_client()
+    client.table("sessions").update({"title": title}).eq("id", session_id).execute()
+
+
+def delete_session(session_id: str) -> None:
+    # messages/artifacts/feedback cascade via ON DELETE CASCADE (migration 001).
+    client = get_client()
+    client.table("sessions").delete().eq("id", session_id).execute()

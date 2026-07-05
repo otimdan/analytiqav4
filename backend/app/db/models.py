@@ -9,6 +9,7 @@ class Session(BaseModel):
     user_id: Optional[UUID] = None
     created_at: datetime
     last_active_at: datetime
+    title: Optional[str] = None
     dataset_filename: Optional[str] = None
     dataset_csv: Optional[str] = None
     sandbox_id: Optional[str] = None

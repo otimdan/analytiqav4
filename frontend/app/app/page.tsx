@@ -1,8 +1,9 @@
 "use client"
-import { useState, useCallback, useRef, useEffect } from "react"
-import type { Message, StreamChunk } from "@/lib/types"
+import { useState, useCallback, useRef, useEffect, useMemo } from "react"
+import type { Message, StreamChunk, ChartImage } from "@/lib/types"
 import { getMessages } from "@/lib/api"
 import { useSession } from "@/hooks/useSession"
+import { useTasks } from "@/hooks/useTasks"
 import { useGuidance } from "@/hooks/useGuidance"
 import { useArtifacts } from "@/hooks/useArtifacts"
 import { useUsage } from "@/hooks/useUsage"
@@ -10,8 +11,8 @@ import { streamQuery } from "@/lib/sse"
 import { ChatInput } from "@/components/chat/ChatInput"
 import { MessageList } from "@/components/chat/MessageList"
 import { StreamingOutput } from "@/components/chat/StreamingOutput"
-import { StepRail } from "@/components/progress/StepRail"
-import { ArtifactHistory } from "@/components/artifacts/ArtifactHistory"
+import { Sidebar } from "@/components/layout/Sidebar"
+import { DataExplorer } from "@/components/artifacts/DataExplorer"
 import { AccountMenu } from "@/components/auth/AccountMenu"
 import { UsageMeter } from "@/components/account/UsageMeter"
 import { UpgradeButton } from "@/components/account/UpgradeButton"
@@ -19,14 +20,16 @@ import { UpgradeButton } from "@/components/account/UpgradeButton"
 function nanoid() { return crypto.randomUUID() }
 
 export default function AnalysisPage() {
-  const { sessionId, sessionState, loading, error, upload, refresh } = useSession()
+  const { sessionId, sessionState, loading, error, upload, select, refresh, end } = useSession()
+  const tasks = useTasks()
   const guidance = useGuidance(sessionState)
-  const { artifacts, completedStages, refresh: refreshArtifacts } = useArtifacts(sessionId)
+  const { completedStages, refresh: refreshArtifacts } = useArtifacts(sessionId)
   const { usage, refresh: refreshUsage } = useUsage()
   const [messages, setMessages] = useState<Message[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [dismissedFeedback, setDismissedFeedback] = useState<Set<string>>(new Set())
   const historyLoadedFor = useRef<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Returning from Dodo checkout: refresh the plan/usage and clean the URL.
   // (Webhook is the source of truth; this just pulls the fresh state sooner.)
@@ -52,7 +55,7 @@ export default function AnalysisPage() {
           server_message_id: h.id,
           role: h.role,
           content: h.content,
-          images: [],
+          images: h.images ?? [],
           regime: h.regime ?? undefined,
           executions: h.executions ?? [],
           created_at: h.created_at ? new Date(h.created_at) : new Date(),
@@ -111,72 +114,129 @@ export default function AnalysisPage() {
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
+    e.target.value = "" // allow re-selecting the same file
     if (!file) return
+    historyLoadedFor.current = "pending" // don't let history load clobber the greeting
     const result = await upload(file)
     if (result) {
+      historyLoadedFor.current = result.session_id
       setMessages([{
         id: nanoid(), role: "assistant",
         content: `Loaded ${result.rows} rows and ${result.columns} columns from ${result.filename}. What are you trying to find out — or are you just exploring for now?`,
         images: [], created_at: new Date(),
       }])
+      tasks.refresh()
+    } else {
+      historyLoadedFor.current = null
     }
-  }, [upload])
+  }, [upload, tasks])
 
-  if (!sessionId) {
-    return (
-      <div className="flex min-h-screen flex-col bg-gray-50">
-        <header className="flex justify-end px-6 py-4">
-          <AccountMenu />
-        </header>
-        <div className="flex flex-1 items-center justify-center px-4">
-          <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
-          <h1 className="text-xl font-semibold text-gray-900">Analytika</h1>
-          <p className="mt-1 text-sm text-gray-500">AI-powered research data analysis</p>
-          <label className="mt-6 block">
-            <div className="cursor-pointer rounded-xl border-2 border-dashed border-gray-300 p-8 text-center hover:border-indigo-400 transition-colors">
-              <p className="text-sm text-gray-600">Drop your CSV here or <span className="text-indigo-600 underline">browse</span></p>
-              <p className="mt-1 text-xs text-gray-400">CSV files only</p>
-            </div>
-            <input type="file" accept=".csv" onChange={handleFileChange} className="hidden" />
-          </label>
-          {loading && <p className="mt-3 text-center text-sm text-indigo-600">Analysing dataset…</p>}
-          {error && <p className="mt-3 text-center text-sm text-red-600">{error}</p>}
-          </div>
-        </div>
-      </div>
-    )
-  }
+  const handleAttach = useCallback(() => fileInputRef.current?.click(), [])
+
+  const handleNewTask = useCallback(() => {
+    if (isStreaming) return
+    end()
+    setMessages([])
+    historyLoadedFor.current = null
+  }, [isStreaming, end])
+
+  const handleSelectTask = useCallback(async (id: string) => {
+    if (isStreaming || id === sessionId) return
+    setMessages([])
+    historyLoadedFor.current = null
+    await select(id)
+  }, [isStreaming, sessionId, select])
+
+  // Artifacts for the right rail come from the conversation: every chart image
+  // and every generated report the assistant has produced this session.
+  const allImages = useMemo<ChartImage[]>(
+    () => messages.flatMap((m) => (m.role === "assistant" ? m.images : [])),
+    [messages],
+  )
+  const allReports = useMemo(
+    () => messages.flatMap((m) => (m.report ? [m.report] : [])),
+    [messages],
+  )
+
+  const hasDataset = !!sessionId
 
   return (
     <div className="flex h-screen overflow-hidden bg-white">
-      {guidance.hypothesis_on_record && <StepRail completedStages={completedStages} hypothesisText={guidance.hypothesis_text} />}
+      <input ref={fileInputRef} type="file" accept=".csv" onChange={handleFileChange} className="hidden" />
+
+      <Sidebar
+        guidance={guidance}
+        completedStages={completedStages}
+        tasks={tasks.tasks}
+        activeTaskId={sessionId}
+        onNewTask={handleNewTask}
+        onSelectTask={handleSelectTask}
+        onDeleteTask={tasks.remove}
+        onRenameTask={tasks.rename}
+      />
+
       <div className="flex flex-1 flex-col overflow-hidden">
-        <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-4 py-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-400">{sessionState?.dataset_filename}</span>
-            <span className="text-xs text-gray-300">·</span>
-            <span className="text-xs text-gray-400">{sessionState?.profile_summary?.row_count} rows</span>
-          </div>
-          <div className="flex items-center gap-3">
-            {usage?.plan === "free" && <UpgradeButton />}
-            <UsageMeter usage={usage} />
-            <AccountMenu />
-          </div>
+        <div className="flex items-center justify-end gap-3 border-b border-gray-100 px-4 py-2">
+          {usage?.plan === "free" && <UpgradeButton />}
+          <UsageMeter usage={usage} />
+          <AccountMenu />
         </div>
+
         <div className="flex-1 overflow-y-auto">
-          <MessageList
-            messages={messages.map((m) => ({ ...m, show_feedback: m.show_feedback && !dismissedFeedback.has(m.id) }))}
-            sessionId={sessionId} suggestionMode={guidance.suggestion_mode} isStreaming={isStreaming}
-            onOptionSelect={(_, opt) => handleSend(opt)}
-            onGuidanceAccept={() => handleSend("Track as project")}
-            onGuidanceRun={(query) => handleSend(query)}
-            onFeedbackDismiss={(id) => setDismissedFeedback((prev) => new Set([...prev, id]))}
-          />
-          <StreamingOutput isVisible={isStreaming} />
+          {hasDataset ? (
+            <>
+              <MessageList
+                messages={messages.map((m) => ({ ...m, show_feedback: m.show_feedback && !dismissedFeedback.has(m.id) }))}
+                sessionId={sessionId} suggestionMode={guidance.suggestion_mode} isStreaming={isStreaming}
+                onOptionSelect={(_, opt) => handleSend(opt)}
+                onGuidanceAccept={() => handleSend("Track as project")}
+                onGuidanceRun={(query) => handleSend(query)}
+                onFeedbackDismiss={(id) => setDismissedFeedback((prev) => new Set([...prev, id]))}
+              />
+              <StreamingOutput isVisible={isStreaming} />
+            </>
+          ) : (
+            <EmptyState onUpload={handleAttach} loading={loading} error={error} />
+          )}
         </div>
-        <ChatInput onSend={handleSend} isStreaming={isStreaming} />
+
+        <ChatInput
+          onSend={handleSend}
+          isStreaming={isStreaming}
+          onAttach={handleAttach}
+          disabled={!hasDataset}
+          placeholder={hasDataset ? "Ask anything about your data…" : "Upload a dataset to get started…"}
+        />
       </div>
-      <ArtifactHistory artifacts={artifacts} />
+
+      <DataExplorer
+        datasetFilename={sessionState?.dataset_filename ?? null}
+        rowCount={sessionState?.profile_summary?.row_count}
+        images={allImages}
+        reports={allReports}
+      />
+    </div>
+  )
+}
+
+function EmptyState({ onUpload, loading, error }: { onUpload: () => void; loading: boolean; error: string | null }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-4 text-center">
+      <h1 className="text-2xl font-semibold text-gray-800">What can I do for you today?</h1>
+      <p className="mt-2 text-sm text-gray-500">Upload a CSV and I&apos;ll help you explore, test, and visualize it.</p>
+      <button
+        onClick={onUpload}
+        disabled={loading}
+        className="mt-6 flex items-center gap-2 rounded-xl border-2 border-dashed border-gray-300 bg-white px-8 py-6 text-sm text-gray-600 transition-colors hover:border-indigo-400 hover:text-indigo-600 disabled:opacity-60"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="17 8 12 3 7 8" />
+          <line x1="12" y1="3" x2="12" y2="15" />
+        </svg>
+        {loading ? "Analysing dataset…" : "Upload a CSV"}
+      </button>
+      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
     </div>
   )
 }

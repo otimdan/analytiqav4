@@ -1,6 +1,10 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from pydantic import BaseModel
 from app.db.models import Session, UploadResponse, SessionStateResponse
-from app.db.sessions import get_session, create_session as db_create_session
+from app.db.sessions import (
+    get_session, create_session as db_create_session,
+    get_sessions_for_user, update_title, delete_session as db_delete_session,
+)
 from app.db.artifacts import get_artifacts_for_session
 from app.db.aio import run_db
 from app.deps import get_current_session
@@ -67,6 +71,35 @@ async def upload_dataset(file: UploadFile = File(...), user: AuthUser = Depends(
     )
 
 
+@router.get("/list")
+async def list_sessions(user: AuthUser = Depends(get_current_user)) -> list[dict]:
+    # The user's tasks for the sidebar, most-recently-active first.
+    return await run_db(get_sessions_for_user, user.id)
+
+
+class RenameRequest(BaseModel):
+    title: str
+
+
+@router.post("/{session_id}/title")
+async def rename_session(session_id: str, req: RenameRequest, session: Session = Depends(get_current_session)) -> dict:
+    title = req.title.strip()[:120]
+    if not title:
+        raise HTTPException(status_code=400, detail="Title cannot be empty.")
+    await run_db(update_title, str(session.id), title)
+    return {"ok": True, "title": title}
+
+
+@router.post("/{session_id}/delete")
+async def delete_session(session_id: str, session: Session = Depends(get_current_session)) -> dict:
+    # Ownership verified by get_current_session. Free the sandbox, then delete the
+    # task (messages/artifacts/feedback cascade).
+    owned_id = str(session.id)
+    await terminate_sandbox(owned_id)
+    await run_db(db_delete_session, owned_id)
+    return {"ok": True}
+
+
 @router.get("/{session_id}/state", response_model=SessionStateResponse)
 async def get_session_state(session_id: str, user: AuthUser = Depends(get_current_user)) -> SessionStateResponse:
     session = await run_db(get_session, session_id)
@@ -109,6 +142,7 @@ async def get_session_messages(session_id: str, user: AuthUser = Depends(get_cur
             "content": row["content"],
             "regime": row.get("regime"),
             "executions": row.get("executions") or [],
+            "images": row.get("images") or [],
             "created_at": row.get("created_at"),
         })
     return messages

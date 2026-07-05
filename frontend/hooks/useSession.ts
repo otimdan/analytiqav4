@@ -11,6 +11,7 @@ export interface UseSessionReturn {
   loading: boolean
   error: string | null
   upload: (file: File) => Promise<UploadResponse | null>
+  select: (sessionId: string) => Promise<void>
   refresh: () => Promise<void>
   reset: () => Promise<void>
   end: () => void
@@ -83,6 +84,25 @@ export function useSession(): UseSessionReturn {
     }
   }, [])
 
+  // Switch to an existing task the user picked from the sidebar. Unlike restore,
+  // this keeps the task selected even if its dataset was wiped, so the user can
+  // still read its history (queries will prompt a re-upload).
+  const select = useCallback(async (id: string): Promise<void> => {
+    if (id === sessionId) return
+    setLoading(true)
+    setError(null)
+    try {
+      const state = await getSessionState(id)
+      setSessionId(id)
+      setSessionState(state)
+      localStorage.setItem(SESSION_STORAGE_KEY, id)
+    } catch {
+      setError("Could not open that task.")
+    } finally {
+      setLoading(false)
+    }
+  }, [sessionId])
+
   const refresh = useCallback(async () => {
     if (!sessionId) return
     try {
@@ -111,5 +131,5 @@ export function useSession(): UseSessionReturn {
     setSessionState(null)
   }, [sessionId])
 
-  return { sessionId, sessionState, loading, error, upload, refresh, reset, end }
+  return { sessionId, sessionState, loading, error, upload, select, refresh, reset, end }
 }

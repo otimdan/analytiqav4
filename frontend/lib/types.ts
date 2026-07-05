@@ -105,7 +105,17 @@ export interface MessageHistoryItem {
   content: string
   regime?: string | null
   executions?: CodeExecution[]
+  images?: ChartImage[]
   created_at: string | null
+}
+
+export interface TaskSummary {
+  id: string
+  title: string
+  dataset_filename: string | null
+  created_at: string | null
+  last_active_at: string | null
+  dataset_ready: boolean
 }
 
 export type ArtifactStage =
