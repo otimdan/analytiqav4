@@ -83,7 +83,26 @@ for col in df.columns:
 
     profile["columns"][col] = col_profile
 
-print(json.dumps(profile))
+
+def _native(o):
+    # value_counts().to_dict() and boolean comparisons leak numpy scalar types
+    # (np.bool_, np.int64, np.float64) into the profile as both keys and values;
+    # the stdlib json encoder can't serialize those. Coerce everything to native
+    # Python before dumping.
+    if isinstance(o, dict):
+        return {_native(k): _native(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_native(v) for v in o]
+    if isinstance(o, np.bool_):
+        return bool(o)
+    if isinstance(o, np.integer):
+        return int(o)
+    if isinstance(o, np.floating):
+        return float(o)
+    return o
+
+
+print(json.dumps(_native(profile)))
 """
 
 
