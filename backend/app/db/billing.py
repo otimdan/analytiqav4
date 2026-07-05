@@ -37,6 +37,14 @@ def set_plan(
     client.table("profiles").upsert({"id": user_id, **updates}).execute()
 
 
+def get_customer_id(user_id: str) -> Optional[str]:
+    client = get_client()
+    res = client.table("profiles").select("dodo_customer_id").eq("id", user_id).limit(1).execute()
+    if res.data:
+        return res.data[0].get("dodo_customer_id")
+    return None
+
+
 def _lookup_user(subscription_id: Optional[str], customer_id: Optional[str]) -> Optional[str]:
     client = get_client()
     if subscription_id:

@@ -66,3 +66,7 @@ export async function getUsage(): Promise<UsageSummary> {
 export async function createCheckout(): Promise<{ checkout_url: string }> {
   return apiFetch<{ checkout_url: string }>("/billing/checkout", { method: "POST" })
 }
+
+export async function createPortalSession(): Promise<{ portal_url: string }> {
+  return apiFetch<{ portal_url: string }>("/billing/portal", { method: "POST" })
+}

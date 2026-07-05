@@ -155,7 +155,7 @@ export default function AnalysisPage() {
           <div className="flex items-center gap-3">
             {usage?.plan === "free" && <UpgradeButton />}
             <UsageMeter usage={usage} />
-            <AccountMenu />
+            <AccountMenu plan={usage?.plan} />
           </div>
         </div>
         <div className="flex-1 overflow-y-auto">
