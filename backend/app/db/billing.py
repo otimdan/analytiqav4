@@ -7,7 +7,25 @@ module only records what Dodo tells us about a user's subscription.
 from typing import Any, Optional
 
 from app.db.supabase_client import get_client
+from app.config import PLANS, DEFAULT_PLAN
 from app.logging_config import logger
+
+# Reverse map: Dodo product_id -> our plan id, so webhooks can resolve which paid
+# plan a subscription is for (supports future plans with no code change here).
+_PRODUCT_TO_PLAN = {p["product_id"]: pid for pid, p in PLANS.items() if p.get("product_id")}
+
+
+def _paid_plan_from_event(data: dict, metadata: dict) -> str:
+    """Which plan an activation grants: prefer checkout metadata, else map the
+    Dodo product id, else the first configured paid plan (usually 'pro')."""
+    plan = metadata.get("plan")
+    if plan in PLANS:
+        return plan
+    product_id = _dig(data, "product_id")
+    if product_id and product_id in _PRODUCT_TO_PLAN:
+        return _PRODUCT_TO_PLAN[product_id]
+    paid = [pid for pid, p in PLANS.items() if p.get("product_id")]
+    return paid[0] if paid else "pro"
 
 # Dodo event types that grant / revoke Pro. Names kept broad to tolerate slight
 # variations across Dodo's event vocabulary.
@@ -89,12 +107,13 @@ def apply_event(event_type: str, data: dict) -> None:
         return
 
     if event_type in _ACTIVATE:
-        set_plan(user_id, "pro", status="active",
+        plan = _paid_plan_from_event(data, metadata)
+        set_plan(user_id, plan, status="active",
                  subscription_id=subscription_id, customer_id=customer_id)
-        logger.info("Billing: user %s -> pro (%s)", user_id, event_type)
+        logger.info("Billing: user %s -> %s (%s)", user_id, plan, event_type)
     elif event_type in _DEACTIVATE:
-        set_plan(user_id, "free", status=event_type.split(".")[-1],
+        set_plan(user_id, DEFAULT_PLAN, status=event_type.split(".")[-1],
                  subscription_id=subscription_id, customer_id=customer_id)
-        logger.info("Billing: user %s -> free (%s)", user_id, event_type)
+        logger.info("Billing: user %s -> %s (%s)", user_id, DEFAULT_PLAN, event_type)
     else:
         logger.info("Billing: ignoring event %s", event_type)

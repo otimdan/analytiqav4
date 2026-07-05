@@ -1,13 +1,11 @@
 "use client"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
-import { createPortalSession } from "@/lib/api"
 import { useAuthUser } from "@/hooks/useAuthUser"
-import { AccountDropdown, DropdownButton } from "./AccountDropdown"
+import { AccountDropdown, DropdownLink, DropdownButton } from "./AccountDropdown"
 
-// Avatar + menu for the app header. Pro users get a "Manage subscription" link
-// into the Dodo customer portal (view/cancel).
-export function AccountMenu({ plan }: { plan?: string }) {
+// Avatar + menu for the app header / billing page.
+export function AccountMenu() {
   const router = useRouter()
   const { user } = useAuthUser()
 
@@ -18,22 +16,11 @@ export function AccountMenu({ plan }: { plan?: string }) {
     router.refresh()
   }
 
-  async function manageSubscription() {
-    try {
-      const { portal_url } = await createPortalSession()
-      window.location.href = portal_url
-    } catch {
-      // no subscription / billing not configured — nothing to open
-    }
-  }
-
   if (!user) return null
 
   return (
     <AccountDropdown email={user.email}>
-      {plan === "pro" && (
-        <DropdownButton onClick={manageSubscription}>Manage subscription</DropdownButton>
-      )}
+      <DropdownLink href="/billing">Plan &amp; billing</DropdownLink>
       <DropdownButton onClick={signOut}>Sign out</DropdownButton>
     </AccountDropdown>
   )

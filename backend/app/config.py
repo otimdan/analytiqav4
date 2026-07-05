@@ -33,15 +33,28 @@ FEEDBACK_EVERY_N_TURNS = int(os.getenv("FEEDBACK_EVERY_N_TURNS", "3"))
 CHI_SQUARE_MIN_EXPECTED_CELL = int(os.getenv("CHI_SQUARE_MIN_EXPECTED_CELL", "5"))
 MIN_SAMPLE_SIZE_PER_GROUP = int(os.getenv("MIN_SAMPLE_SIZE_PER_GROUP", "20"))
 
-# ── Billing / usage caps ──────────────────────────────────────
-# Metered analyses per calendar month, per plan. A "metered analysis" is an
-# exploratory or confirmatory run (the compute-heavy regimes). Keep these in
-# sync with the pricing shown on the homepage.
+# ── Plans / usage caps ────────────────────────────────────────
+# Single source of truth for plans. To ADD a plan later, add an entry here
+# (backend-only) — the frontend renders whatever GET /billing/plans returns, so
+# no frontend change is needed. `product_id` is the Dodo product for paid plans
+# (None for free). `monthly_analyses` caps exploratory/confirmatory runs/month.
 DEFAULT_PLAN = "free"
-PLAN_LIMITS = {
-    "free": int(os.getenv("FREE_MONTHLY_ANALYSES", "10")),
-    "pro": int(os.getenv("PRO_MONTHLY_ANALYSES", "300")),
+PLANS: dict[str, dict] = {
+    "free": {
+        "name": "Free",
+        "monthly_analyses": int(os.getenv("FREE_MONTHLY_ANALYSES", "10")),
+        "price_usd": 0,
+        "product_id": None,
+    },
+    "pro": {
+        "name": "Pro",
+        "monthly_analyses": int(os.getenv("PRO_MONTHLY_ANALYSES", "300")),
+        "price_usd": int(os.getenv("PRO_PRICE_USD", "19")),
+        "product_id": os.getenv("DODO_PRO_PRODUCT_ID") or None,
+    },
 }
+# Derived for the metering layer (plan id -> monthly cap).
+PLAN_LIMITS = {pid: p["monthly_analyses"] for pid, p in PLANS.items()}
 
 # ── Dodo Payments ─────────────────────────────────────────────
 # Optional: billing endpoints return 503 until these are set.

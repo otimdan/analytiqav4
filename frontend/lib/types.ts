@@ -53,6 +53,15 @@ export interface UsageSummary {
   remaining: number
 }
 
+export interface Plan {
+  id: string
+  name: string
+  price_usd: number
+  monthly_analyses: number
+  is_paid: boolean
+  current: boolean
+}
+
 export interface StreamChunk {
   type: ChunkType
   content?: string

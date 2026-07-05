@@ -4,20 +4,45 @@ from fastapi import APIRouter, Depends, Request, HTTPException
 
 from app.auth import get_current_user, AuthUser
 from app.config import (
-    DODO_API_KEY, DODO_WEBHOOK_KEY, DODO_ENVIRONMENT, DODO_PRO_PRODUCT_ID, APP_URL,
+    DODO_API_KEY, DODO_WEBHOOK_KEY, DODO_ENVIRONMENT, APP_URL, PLANS,
 )
 from app.db.aio import run_db
 from app.db import billing
+from app.db.usage import get_plan
 from app.logging_config import logger
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 
 
+@router.get("/plans")
+async def list_plans(user: AuthUser = Depends(get_current_user)) -> list[dict]:
+    """The plan catalog for the frontend to render (current plan flagged).
+    Adding a plan is a backend-only change — see config.PLANS."""
+    current = await run_db(get_plan, user.id)
+    return [
+        {
+            "id": pid,
+            "name": p["name"],
+            "price_usd": p["price_usd"],
+            "monthly_analyses": p["monthly_analyses"],
+            "is_paid": bool(p.get("product_id")),
+            "current": pid == current,
+        }
+        for pid, p in PLANS.items()
+    ]
+
+
 @router.post("/checkout")
-async def create_checkout(user: AuthUser = Depends(get_current_user)) -> dict:
-    """Create a Dodo hosted checkout session for the Pro plan and return its URL."""
-    if not DODO_API_KEY or not DODO_PRO_PRODUCT_ID:
+async def create_checkout(payload: dict | None = None, user: AuthUser = Depends(get_current_user)) -> dict:
+    """Create a Dodo hosted checkout session for the requested plan (default 'pro')."""
+    if not DODO_API_KEY:
         raise HTTPException(status_code=503, detail="Billing is not configured on the server.")
+
+    plan_id = (payload or {}).get("plan", "pro")
+    plan = PLANS.get(plan_id)
+    product_id = plan.get("product_id") if plan else None
+    if not product_id:
+        raise HTTPException(status_code=503, detail="That plan isn't available for checkout.")
 
     def _create() -> str:
         try:
@@ -26,10 +51,10 @@ async def create_checkout(user: AuthUser = Depends(get_current_user)) -> dict:
             raise HTTPException(status_code=503, detail="Billing SDK is not installed.")
         client = DodoPayments(bearer_token=DODO_API_KEY, environment=DODO_ENVIRONMENT or "test_mode")
         session = client.checkout_sessions.create(
-            product_cart=[{"product_id": DODO_PRO_PRODUCT_ID, "quantity": 1}],
+            product_cart=[{"product_id": product_id, "quantity": 1}],
             customer={"email": user.email or "", "name": user.email or "User"},
             return_url=f"{APP_URL}/app?checkout=success",
-            metadata={"user_id": user.id},
+            metadata={"user_id": user.id, "plan": plan_id},
         )
         url = getattr(session, "checkout_url", None)
         if not url and isinstance(session, dict):

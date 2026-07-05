@@ -36,6 +36,7 @@ export function HomeAuthNav() {
   return (
     <AccountDropdown email={user.email}>
       <DropdownLink href="/app">Go to app</DropdownLink>
+      <DropdownLink href="/billing">Plan &amp; billing</DropdownLink>
       <DropdownButton onClick={signOut}>Sign out</DropdownButton>
     </AccountDropdown>
   )
