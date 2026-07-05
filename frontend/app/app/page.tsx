@@ -5,6 +5,7 @@ import { getMessages } from "@/lib/api"
 import { useSession } from "@/hooks/useSession"
 import { useGuidance } from "@/hooks/useGuidance"
 import { useArtifacts } from "@/hooks/useArtifacts"
+import { useUsage } from "@/hooks/useUsage"
 import { streamQuery } from "@/lib/sse"
 import { ChatInput } from "@/components/chat/ChatInput"
 import { MessageList } from "@/components/chat/MessageList"
@@ -12,6 +13,8 @@ import { StreamingOutput } from "@/components/chat/StreamingOutput"
 import { StepRail } from "@/components/progress/StepRail"
 import { ArtifactHistory } from "@/components/artifacts/ArtifactHistory"
 import { AccountMenu } from "@/components/auth/AccountMenu"
+import { UsageMeter } from "@/components/account/UsageMeter"
+import { UpgradeButton } from "@/components/account/UpgradeButton"
 
 function nanoid() { return crypto.randomUUID() }
 
@@ -19,10 +22,21 @@ export default function AnalysisPage() {
   const { sessionId, sessionState, loading, error, upload, refresh } = useSession()
   const guidance = useGuidance(sessionState)
   const { artifacts, completedStages, refresh: refreshArtifacts } = useArtifacts(sessionId)
+  const { usage, refresh: refreshUsage } = useUsage()
   const [messages, setMessages] = useState<Message[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [dismissedFeedback, setDismissedFeedback] = useState<Set<string>>(new Set())
   const historyLoadedFor = useRef<string | null>(null)
+
+  // Returning from Dodo checkout: refresh the plan/usage and clean the URL.
+  // (Webhook is the source of truth; this just pulls the fresh state sooner.)
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    if (new URLSearchParams(window.location.search).get("checkout") === "success") {
+      refreshUsage()
+      window.history.replaceState({}, "", "/app")
+    }
+  }, [refreshUsage])
 
   // On restore (session id set from localStorage, chat empty), load prior
   // messages so the conversation and its code/output blocks persist.
@@ -90,9 +104,10 @@ export default function AnalysisPage() {
         setIsStreaming(false)
         await refresh()
         await refreshArtifacts()
+        await refreshUsage()
       }
     )
-  }, [sessionId, isStreaming, refresh, refreshArtifacts])
+  }, [sessionId, isStreaming, refresh, refreshArtifacts, refreshUsage])
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -109,8 +124,12 @@ export default function AnalysisPage() {
 
   if (!sessionId) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
+      <div className="flex min-h-screen flex-col bg-gray-50">
+        <header className="flex justify-end px-6 py-4">
+          <AccountMenu />
+        </header>
+        <div className="flex flex-1 items-center justify-center px-4">
+          <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
           <h1 className="text-xl font-semibold text-gray-900">Analytika</h1>
           <p className="mt-1 text-sm text-gray-500">AI-powered research data analysis</p>
           <label className="mt-6 block">
@@ -122,6 +141,7 @@ export default function AnalysisPage() {
           </label>
           {loading && <p className="mt-3 text-center text-sm text-indigo-600">Analysing dataset…</p>}
           {error && <p className="mt-3 text-center text-sm text-red-600">{error}</p>}
+          </div>
         </div>
       </div>
     )
@@ -137,7 +157,11 @@ export default function AnalysisPage() {
             <span className="text-xs text-gray-300">·</span>
             <span className="text-xs text-gray-400">{sessionState?.profile_summary?.row_count} rows</span>
           </div>
-          <AccountMenu />
+          <div className="flex items-center gap-3">
+            {usage?.plan === "free" && <UpgradeButton />}
+            <UsageMeter usage={usage} />
+            <AccountMenu />
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto">
           <MessageList

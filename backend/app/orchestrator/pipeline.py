@@ -7,6 +7,7 @@ from app.db.models import Session, Message
 from app.db.sessions import increment_feedback_count, update_flags, get_session
 from app.db.artifacts import log_artifact, find_similar_artifact, mark_superseded
 from app.db.hypothesis_candidates import get_pending_candidate
+from app.db.usage import get_usage_summary, record_usage
 from app.db.aio import run_db
 from app.profiling.cache import get_cached_profile, profile_is_ready
 
@@ -81,7 +82,19 @@ async def process_message(
             yield {"type": "meta", "show_feedback": new_count % FEEDBACK_EVERY_N_TURNS == 0}
             return
 
+    # Meter the compute-heavy regimes against the user's monthly plan cap. Gate
+    # before spending compute; record after it's actually spent.
+    metered = regime in ["exploratory", "confirmatory"]
+    if metered and updated_session.user_id:
+        summary = await run_db(get_usage_summary, str(updated_session.user_id))
+        if summary["remaining"] <= 0:
+            yield {"type": "text", "content": _limit_message(summary), "regime": "meta", "show_feedback": False}
+            return
+
     raw_result = await _dispatch(regime=regime, message=message, session=updated_session, context=context, recent_messages=recent_messages)
+
+    if metered and updated_session.user_id:
+        await run_db(record_usage, str(updated_session.user_id), regime)
 
     validation = validate_output(regime=regime, response_text=raw_result.get("text", ""), artifact_content=raw_result.get("artifact_content"), has_images=bool(raw_result.get("images")))
 
@@ -113,6 +126,15 @@ async def process_message(
 
     if updated_session.suggestion_mode and raw_result.get("suggested_next"):
         yield {"type": "guidance_suggestion", "content": raw_result["suggested_next"], "next_action": raw_result.get("next_action"), "is_hypothesis_candidate": raw_result.get("is_hypothesis_candidate", False), "regime": regime, "show_feedback": False}
+
+
+def _limit_message(summary: dict[str, Any]) -> str:
+    plan = summary.get("plan", "free")
+    limit = summary.get("limit", 0)
+    return (
+        f"You've used all {limit} analyses on your **{plan}** plan this month. "
+        "Your limit resets at the start of next month — or upgrade to Pro to keep going now."
+    )
 
 
 async def _dispatch(regime, message, session, context, recent_messages) -> dict[str, Any]:

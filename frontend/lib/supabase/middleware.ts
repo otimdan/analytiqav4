@@ -31,8 +31,9 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // Guard /app — unauthenticated users are sent to /login with a return path.
-  if (!user && request.nextUrl.pathname.startsWith("/app")) {
+  // Guard the authenticated areas — unauthenticated users go to /login.
+  const path = request.nextUrl.pathname
+  if (!user && (path.startsWith("/app") || path.startsWith("/billing"))) {
     const redirectUrl = request.nextUrl.clone()
     redirectUrl.pathname = "/login"
     redirectUrl.searchParams.set("redirect", request.nextUrl.pathname)

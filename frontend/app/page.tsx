@@ -4,11 +4,12 @@ import {
   ShieldCheck, ArrowRight, Check,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { HomeAuthNav } from "@/components/auth/HomeAuthNav"
+import { ProCheckoutButton } from "@/components/account/ProCheckoutButton"
 
-// New visitors go to signup; returning users to login. Auth middleware then
-// routes them into /app.
+// New visitors go to signup; signed-in visitors hitting /signup are bounced to
+// /app by the auth middleware, so these hrefs work for both.
 const SIGNUP_HREF = "/signup"
-const LOGIN_HREF = "/login"
 
 const FEATURES = [
   {
@@ -45,7 +46,7 @@ const TIERS = [
     price: "$0",
     cadence: "forever",
     blurb: "For trying it out and light coursework.",
-    features: ["3 analyses / month", "Charts & summaries", "1 dataset at a time"],
+    features: ["10 analyses / month", "Charts & summaries", "1 dataset at a time"],
     cta: "Start free",
     highlighted: false,
   },
@@ -54,7 +55,7 @@ const TIERS = [
     price: "$19",
     cadence: "/ month",
     blurb: "For researchers and students doing real work.",
-    features: ["200 analyses / month", "Full reports & exports", "Hypothesis / project tracking", "Priority model routing"],
+    features: ["300 analyses / month", "Full reports & exports", "Hypothesis / project tracking", "Priority model routing"],
     cta: "Get Pro",
     highlighted: true,
   },
@@ -72,14 +73,7 @@ export default function HomePage() {
             </span>
             Analytika
           </Link>
-          <nav className="flex items-center gap-2">
-            <Button asChild variant="ghost" size="sm">
-              <Link href={LOGIN_HREF}>Sign in</Link>
-            </Button>
-            <Button asChild size="sm">
-              <Link href={SIGNUP_HREF}>Get started</Link>
-            </Button>
-          </nav>
+          <HomeAuthNav />
         </div>
       </header>
 
@@ -188,9 +182,13 @@ export default function HomePage() {
                       </li>
                     ))}
                   </ul>
-                  <Button asChild className="mt-7 w-full" variant={t.highlighted ? "default" : "outline"}>
-                    <Link href={SIGNUP_HREF}>{t.cta}</Link>
-                  </Button>
+                  {t.highlighted ? (
+                    <ProCheckoutButton className="mt-7 w-full">{t.cta}</ProCheckoutButton>
+                  ) : (
+                    <Button asChild className="mt-7 w-full" variant="outline">
+                      <Link href={SIGNUP_HREF}>{t.cta}</Link>
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>
@@ -224,6 +222,10 @@ export default function HomePage() {
             </span>
             Analytika
           </div>
+          <nav className="flex items-center gap-5">
+            <Link href="/privacy" className="hover:text-gray-800">Privacy</Link>
+            <Link href="/terms" className="hover:text-gray-800">Terms</Link>
+          </nav>
           <p>© {new Date().getFullYear()} Analytika. All rights reserved.</p>
         </div>
       </footer>

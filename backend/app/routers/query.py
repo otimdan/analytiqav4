@@ -1,6 +1,6 @@
 import json
 import asyncio
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from uuid import uuid4
 from datetime import datetime, timezone
@@ -11,6 +11,7 @@ from app.db.aio import run_db
 from app.deps import get_current_session
 from app.orchestrator.pipeline import process_message
 from app.db.supabase_client import get_client
+from app.rate_limit import query_limiter
 from app.logging_config import logger
 
 router = APIRouter(prefix="/query", tags=["query"])
@@ -18,6 +19,10 @@ router = APIRouter(prefix="/query", tags=["query"])
 
 @router.post("")
 async def handle_query(req: QueryRequest, session: Session = Depends(get_current_session)) -> StreamingResponse:
+    rate_key = str(session.user_id or session.id)
+    if not query_limiter.allow(rate_key):
+        raise HTTPException(status_code=429, detail="You're sending requests too quickly. Please wait a moment and try again.")
+
     message_id = str(uuid4())
     now = datetime.now(timezone.utc)
 

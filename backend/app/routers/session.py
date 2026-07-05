@@ -5,6 +5,7 @@ from app.db.artifacts import get_artifacts_for_session
 from app.db.aio import run_db
 from app.deps import get_current_session
 from app.auth import get_current_user, AuthUser
+from app.rate_limit import upload_limiter
 from app.profiling.profiler import build_profile
 from app.profiling.cache import set_cached_profile
 from app.sandbox.manager import get_or_create_sandbox, terminate_sandbox
@@ -16,6 +17,8 @@ router = APIRouter(prefix="/session", tags=["session"])
 
 @router.post("/upload", response_model=UploadResponse)
 async def upload_dataset(file: UploadFile = File(...), user: AuthUser = Depends(get_current_user)) -> UploadResponse:
+    if not upload_limiter.allow(user.id):
+        raise HTTPException(status_code=429, detail="Too many uploads in a short time. Please wait a moment.")
     if not file.filename or not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are accepted.")
 
