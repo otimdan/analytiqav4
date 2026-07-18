@@ -112,6 +112,31 @@ def two_categorical_3x3_small() -> pd.DataFrame:
     return pd.DataFrame({"region": region, "grade": grade})
 
 
+# ── regression fixtures (known coefficients) ─────────────────────────────────
+def linear_regression_dataset() -> pd.DataFrame:
+    # TRUE model: exam_score = 50 + 4*hours_studied - 6*(cohort==morning) + noise
+    r = _rng(10)
+    n = 200
+    hours = r.uniform(0, 10, n)
+    cohort = r.choice(["morning", "evening"], n)
+    score = 50 + 4 * hours + np.where(cohort == "morning", -6, 0) + r.normal(0, 3, n)
+    return pd.DataFrame({
+        "exam_score": np.round(score, 1),
+        "hours_studied": np.round(hours, 2),
+        "cohort": cohort,
+    })
+
+
+def logistic_regression_dataset() -> pd.DataFrame:
+    # TRUE model: logit P(passed=yes) = -3 + 0.6*hours_studied
+    r = _rng(11)
+    n = 300
+    hours = r.uniform(0, 10, n)
+    p = 1.0 / (1.0 + np.exp(-(-3 + 0.6 * hours)))
+    passed = np.where(r.random(n) < p, "yes", "no")
+    return pd.DataFrame({"passed": passed, "hours_studied": np.round(hours, 2)})
+
+
 # ── classification fixtures ──────────────────────────────────────────────────
 def classification_dataset() -> pd.DataFrame:
     r = _rng(9)
