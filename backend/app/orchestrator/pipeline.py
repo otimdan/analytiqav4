@@ -16,7 +16,7 @@ from app.orchestrator.hypothesis_watcher import check_message_for_hypothesis
 from app.orchestrator.context_builder import build_context
 from app.orchestrator.validator import validate_output, get_fallback_message
 
-from app.regimes import advisory, pedagogy, exploratory, confirmatory, orientation, meta
+from app.regimes import advisory, pedagogy, exploratory, confirmatory, orientation, meta, cleaning
 from app.logging_config import logger
 
 
@@ -186,6 +186,8 @@ async def _dispatch(regime, message, session, context, recent_messages) -> dict[
         return await confirmatory.handle(message, session, context, recent_messages)
     if regime == "orientation":
         return await orientation.handle(session, context)
+    if regime == "cleaning":
+        return await cleaning.handle(message, session, context)
     if regime == "meta":
         return await meta.handle(message, session, context)
     return {"text": "I wasn't sure how to handle that. Could you rephrase?", "images": [], "artifact_content": None, "artifact_type": None, "stage": None, "variables_involved": None, "code_used": None, "suggested_next": None, "is_hypothesis_candidate": False}

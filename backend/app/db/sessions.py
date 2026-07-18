@@ -117,6 +117,14 @@ def clear_sandbox_id(session_id: str) -> None:
     }).eq("id", session_id).execute()
 
 
+def update_dataset_csv(session_id: str, csv_text: str) -> None:
+    # Replace the working dataset with a cleaned/transformed version. This is the
+    # durable source of truth (re-mounted on sandbox rebuilds), so cleaning
+    # persists without needing code replay.
+    client = get_client()
+    client.table("sessions").update({"dataset_csv": csv_text}).eq("id", session_id).execute()
+
+
 def clear_dataset(session_id: str) -> None:
     client = get_client()
     client.table("sessions").update({

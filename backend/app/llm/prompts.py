@@ -1,12 +1,13 @@
 CLASSIFIER_SYSTEM_PROMPT = """
 You are an intent classifier for a research data analysis tool.
-Your only job is to classify a user message into exactly one of these six regimes:
+Your only job is to classify a user message into exactly one of these seven regimes:
 
 - advisory: question answerable from dataset metadata without running code
 - pedagogy: generic statistics or methodology explanation unrelated to the specific dataset
 - exploratory: request to look at data, generate a chart, get a summary — no formal test implied
 - confirmatory: request to formally test whether something is true, statistically significant
 - orientation: user asks what to do next, says they are lost, or asks for suggestions
+- cleaning: prepare/clean the data — handle missing values, convert a column to numeric, remove/cap outliers, recode or merge categories, filter rows, drop/rename/derive a column
 - meta: navigation command, report request, accepting or declining a prompt, system action
 
 Return JSON only. No preamble. No explanation.
@@ -117,6 +118,29 @@ Write a clear, plain-language interpretation:
   autocorrelation; low residual-normality p = non-normal residuals.
 Do NOT invent numbers — use only what's in the output.
 Return JSON only matching the ConfirmatoryNarration schema.
+"""
+
+
+CLEANING_EXTRACTION_SYSTEM_PROMPT = """
+You map a user's data-cleaning request to EXACTLY ONE operation from this menu,
+with its parameters. You are given the dataset's column names — use them exactly.
+
+Operations and their params:
+- drop_missing: columns (list, or null = any column)
+- impute_missing: column, strategy (mean|median|mode|constant), value (only if constant)
+- coerce_numeric: column  (strip $/,/% etc. and make numeric)
+- remove_outliers: column, method (iqr|zscore, default iqr), action (remove|cap, default remove)
+- recode: column, mapping (object of old_value -> new_value)
+- filter_rows: column, operator (==,!=,>,<,>=,<=), value
+- drop_column: columns (list)
+- rename_column: old, new
+- derive_column: new (name), left (column), operator (+,-,*,/), right (column name or a number), right_is_col (true if right is a column)
+
+Rules:
+- Set is_cleaning=false if the request isn't a cleaning/preparation request.
+- Choose the single best-matching operation. Use exact column names from the list.
+- Only fill params relevant to the chosen operation; leave others null.
+Return JSON only matching the CleaningSpec schema.
 """
 
 

@@ -11,6 +11,16 @@ _RULE_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"^(yes[,.]?\s*(track it|do it|go ahead|proceed|let'?s do it)|no[,.]?\s*(just answer|don'?t track|skip))\b", re.IGNORECASE), "meta"),
     (re.compile(r"\b(what is|what are|explain|define|how does|what does .+ mean|tell me about)\b.{0,40}\b(p.value|t.test|anova|chi.square|regression|correlation|standard deviation|mean|median|hypothesis test|confidence interval|effect size|statistical significance|mann.whitney|kruskal|shapiro|normality|variance|null hypothesis)\b", re.IGNORECASE), "pedagogy"),
     (re.compile(r"\b(how many (rows|columns|observations|variables|missing|null)|what columns|what variables|column names|variable names|dataset size|how much missing|missingness|sample size)\b", re.IGNORECASE), "advisory"),
+    # Data cleaning / preparation (deterministic transforms).
+    (re.compile(r"\b(remove|drop|delete|handle|fill|impute|replace|deal with)\b.{0,30}\b(missing|nulls?|nans?|blank|empty)\b", re.IGNORECASE), "cleaning"),
+    (re.compile(r"\b(convert|coerce|cast|change|make)\b.{0,20}\b(to )?(a )?numeric|to a? ?number\b", re.IGNORECASE), "cleaning"),
+    (re.compile(r"\b(remove|handle|cap|drop|deal with|trim|winsori[sz]e)\b.{0,20}\boutliers?\b", re.IGNORECASE), "cleaning"),
+    (re.compile(r"\b(recode|remap|relabel|merge|combine)\b.{0,25}\b(categor|group|value|level|label)\b", re.IGNORECASE), "cleaning"),
+    (re.compile(r"\b(drop|remove|delete)\b.{0,15}\bcolumns?\b", re.IGNORECASE), "cleaning"),
+    (re.compile(r"\b(rename)\b.{0,15}\bcolumns?\b", re.IGNORECASE), "cleaning"),
+    (re.compile(r"\b(filter|keep|subset|exclude)\b.{0,25}\b(rows?|records?|observations?)\b", re.IGNORECASE), "cleaning"),
+    (re.compile(r"\b(create|add|derive|compute|make)\b.{0,15}\b(a )?(new )?(column|variable|feature)\b", re.IGNORECASE), "cleaning"),
+    (re.compile(r"\b(clean|tidy up|prepare|preprocess|wrangle)\b.{0,20}\b(the )?(data|dataset|column|values?)\b", re.IGNORECASE), "cleaning"),
     (re.compile(r"\b(what (should|do) i (do|try|check|look at) next|i don'?t know what to do|i'?m (not sure|stuck|lost|confused) (what|where|how)|help me (do|with|start|proceed|analyse|analyze)|where do i (go|start|begin) (from here|next)|what'?s (the )?next step|suggest(ion)?s? (on )?what|guide me)\b", re.IGNORECASE), "orientation"),
     # Explicit "run this test" requests must route to confirmatory DETERMINISTICALLY
     # — not on the LLM classifier's whim (which once sent "Run the statistical

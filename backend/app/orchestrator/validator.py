@@ -15,6 +15,7 @@ _REGIME_REQUIREMENTS: dict[str, dict[str, Any]] = {
     "exploratory": {"forbidden_empty": False, "required_fields": [], "may_have_images": True},
     "confirmatory": {"forbidden_empty": True, "required_fields": ["test_name", "p_value"], "may_have_images": False},
     "orientation": {"forbidden_empty": True, "required_fields": [], "may_have_images": False},
+    "cleaning": {"forbidden_empty": True, "required_fields": [], "may_have_images": False},
     "meta": {"forbidden_empty": False, "required_fields": [], "may_have_images": False},
 }
 
