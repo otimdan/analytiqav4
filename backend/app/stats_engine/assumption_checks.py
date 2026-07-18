@@ -138,7 +138,11 @@ def _normal(series):
             _, p = stats.shapiro(s)
     except Exception:
         return NA
-    return PASS if p >= 0.05 else FAIL
+    # Use alpha = 0.01 (not 0.05) for the normality PRE-test. Normality tests
+    # over-reject genuinely-normal data (~3.5% at 0.05 here) and t-tests/ANOVA
+    # are robust to MILD non-normality, so we only switch to a non-parametric
+    # test on STRONG evidence of non-normality. Skewed data still fails easily.
+    return PASS if p >= 0.01 else FAIL
 """
     if scenario == "num_num":
         body = f"""
@@ -151,14 +155,18 @@ result["min_expected_cell"] = NA
     elif scenario == "num_cat":
         body = f"""
 groups = [g[{a}].dropna() for _, g in df.groupby({b}) if g[{a}].dropna().shape[0] > 1]
-per_group_norm = [_normal(g) for g in groups]
-testable = [r for r in per_group_norm if r != NA]
-if not testable:
-    result["normality_outcome"] = NA
-elif all(r == PASS for r in testable):
-    result["normality_outcome"] = PASS
+# Normality (t-tests/ANOVA) is about the within-group residuals. Test the
+# pooled, group-STANDARDIZED residuals ((x - group_mean) / group_sd) once:
+#  - one test avoids the multiple-comparison inflation of testing each group;
+#  - standardizing decouples normality from variance, so unequal group variances
+#    don't spuriously fail normality (raw pooled residuals from unequal-variance
+#    groups are a non-normal mixture).
+_std = [g.std(ddof=1) for g in groups]
+if len(groups) >= 2 and all(s and s > 0 for s in _std):
+    resid = np.concatenate([(g.values - g.mean()) / s for g, s in zip(groups, _std)])
+    result["normality_outcome"] = _normal(pd.Series(resid)) if len(resid) >= 3 else NA
 else:
-    result["normality_outcome"] = FAIL
+    result["normality_outcome"] = NA
 result["normality_b"] = NA
 if len(groups) >= 2:
     try:
@@ -188,40 +196,57 @@ except Exception:
     return header + body + "\nprint(json.dumps(result))\n"
 
 
-async def run_live_checks(sbx, var_a: str, var_b: str, type_a: str, type_b: str) -> dict[str, str]:
-    """Run assumption checks on the live data. Expects var_a/var_b already
-    normalized by the caller so that for a group comparison var_a is the numeric
-    OUTCOME and var_b is the categorical GROUPING variable. Falls back to a
-    NOT_APPLICABLE-filled dict if the sandbox result can't be parsed, so the
-    decision tree still runs (it simply treats unknown assumptions as unmet-safe
-    downstream)."""
-    from app.sandbox.executor import execute_code  # local import avoids a cycle
-
+def select_scenario(type_a: str, type_b: str) -> str | None:
+    """Which live-check scenario applies to this typed pair (or None if the
+    combination has no verified assumption checks)."""
     if type_a in _NUMERICISH and type_b in _NUMERICISH:
-        scenario = "num_num"
-    elif type_a in _NUMERICISH and type_b == "categorical":
-        scenario = "num_cat"
-    elif type_a == "categorical" and type_b == "categorical":
-        scenario = "cat_cat"
-    else:
-        return _blank_checks()
+        return "num_num"
+    if type_a in _NUMERICISH and type_b == "categorical":
+        return "num_cat"
+    if type_a == "categorical" and type_b == "categorical":
+        return "cat_cat"
+    return None
 
-    script = _build_check_script(scenario, var_a, var_b, MIN_SAMPLE_SIZE_PER_GROUP, CHI_SQUARE_MIN_EXPECTED_CELL)
-    exec_result = await execute_code(sbx, script)
-    stdout = (exec_result.get("stdout") or "").strip()
-    if not stdout:
-        return _blank_checks()
-    try:
-        parsed = json.loads(stdout.splitlines()[-1])
-    except (json.JSONDecodeError, ValueError):
-        return _blank_checks()
-    # Only keep known keys with a valid vocabulary; fill the rest.
+
+def build_check_script_for(var_a: str, var_b: str, type_a: str, type_b: str) -> str | None:
+    """The full live-check script for a typed pair, or None if unsupported.
+    Split out so tests can run it locally (no E2B) against the same code path."""
+    scenario = select_scenario(type_a, type_b)
+    if scenario is None:
+        return None
+    return _build_check_script(scenario, var_a, var_b, MIN_SAMPLE_SIZE_PER_GROUP, CHI_SQUARE_MIN_EXPECTED_CELL)
+
+
+def parse_checks(stdout: str | None) -> dict[str, str]:
+    """Parse the JSON the check script prints into the PASS/FAIL/NA dict, keeping
+    only known keys with a valid vocabulary. Falls back to all-NA on any problem,
+    so the decision tree still runs (treating unknown assumptions as unmet-safe)."""
     out = _blank_checks()
+    text = (stdout or "").strip()
+    if not text:
+        return out
+    try:
+        parsed = json.loads(text.splitlines()[-1])
+    except (json.JSONDecodeError, ValueError, IndexError):
+        return out
     for key in out:
         val = parsed.get(key)
         if val in (PASS, FAIL, NOT_APPLICABLE):
             out[key] = val
     return out
+
+
+async def run_live_checks(sbx, var_a: str, var_b: str, type_a: str, type_b: str) -> dict[str, str]:
+    """Run assumption checks on the live data. Expects var_a/var_b already
+    normalized by the caller so that for a group comparison var_a is the numeric
+    OUTCOME and var_b is the categorical GROUPING variable."""
+    from app.sandbox.executor import execute_code  # local import avoids a cycle
+
+    script = build_check_script_for(var_a, var_b, type_a, type_b)
+    if script is None:
+        return _blank_checks()
+    exec_result = await execute_code(sbx, script)
+    return parse_checks(exec_result.get("stdout"))
 
 
 def _blank_checks() -> dict[str, str]:

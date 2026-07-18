@@ -23,6 +23,21 @@ from app.db.aio import run_db
 _VARIANCE_DOWNGRADES = {("welch_t", "independent_t"), ("welch_anova", "one_way_anova")}
 
 
+def _is_assumption_downgrade(recommended_test: str, requested_test: str) -> bool:
+    """True if honoring an explicit request for `requested_test` over the engine's
+    `recommended_test` would re-introduce a violated assumption — i.e. swap the
+    engine's assumption-appropriate choice for a less-valid one:
+      - non-parametric recommended -> parametric requested (normality/sample failed)
+      - Welch (variance-robust) recommended -> equal-variance counterpart requested
+    In those cases accuracy wins and we keep the engine's choice."""
+    rec, req = get_test(recommended_test), get_test(requested_test)
+    if not rec or not req:
+        return False
+    nonparam_downgrade = bool(rec.get("nonparametric") and not req.get("nonparametric"))
+    variance_downgrade = (recommended_test, requested_test) in _VARIANCE_DOWNGRADES
+    return nonparam_downgrade or variance_downgrade
+
+
 async def handle(message: str, session: Session, context: dict[str, Any], recent_messages: list[Message]) -> dict[str, Any]:
     mode = context.get("mode", "explore")
     profile = await run_db(get_cached_profile, str(session.id))
@@ -118,11 +133,7 @@ async def _run_verified(session, context, var_a, var_b, recommended_test, reason
     if requested_confident and requested_test and get_test(requested_test) and requested_test != recommended_test:
         req_entry = get_test(requested_test)
         rec_entry = get_test(recommended_test)
-        rec_is_nonparametric = bool(rec_entry and rec_entry.get("nonparametric"))
-        req_is_parametric = bool(req_entry and not req_entry.get("nonparametric"))
-        is_nonparam_downgrade = rec_is_nonparametric and req_is_parametric
-        is_variance_downgrade = (recommended_test, requested_test) in _VARIANCE_DOWNGRADES
-        if is_nonparam_downgrade or is_variance_downgrade:
+        if _is_assumption_downgrade(recommended_test, requested_test):
             reasoning = (
                 f"{reasoning} (You asked for {req_entry['display_name']}, but the assumption "
                 f"checks show it isn't the right fit for this data, so I used "

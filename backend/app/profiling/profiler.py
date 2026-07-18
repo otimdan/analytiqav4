@@ -18,6 +18,10 @@ for col in df.columns:
     col_profile = {}
     dtype_str = str(series.dtype)
     col_profile["pandas_dtype"] = dtype_str
+    # Treat object AND the newer pandas string dtype ('str'/'string[...]') and
+    # category as text/categorical. Without this, string columns on newer pandas
+    # (dtype 'str') are neither numeric nor object and fall through to unknown.
+    stringy = ('object' in dtype_str) or ('str' in dtype_str) or ('categor' in dtype_str)
     null_count = int(series.isnull().sum())
     col_profile["null_count"] = null_count
     col_profile["null_pct"] = round(null_count / len(df) * 100, 2)
@@ -40,16 +44,15 @@ for col in df.columns:
             col_profile["value_counts"] = series.value_counts().head(10).to_dict()
         else:
             col_profile["likely_categorical"] = False
-    elif pd.api.types.is_object_dtype(series) or dtype_str == 'category':
-        # ^^^ replaced is_categorical_dtype (removed in pandas 2.2)
+    elif stringy:
         col_profile["top_values"] = series.value_counts().head(10).to_dict()
         col_profile["group_count"] = unique_count
 
     # Datetime detection — removed infer_datetime_format (removed in pandas 2.2)
-    if pd.api.types.is_object_dtype(series):
+    if stringy:
         try:
             parsed = pd.to_datetime(series, errors='coerce')
-            col_profile["likely_datetime"] = parsed.notna().sum() > len(df) * 0.8
+            col_profile["likely_datetime"] = bool(parsed.notna().sum() > len(df) * 0.8)
         except Exception:
             col_profile["likely_datetime"] = False
     else:
