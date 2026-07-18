@@ -17,6 +17,7 @@ from app.stats_engine.test_selector import (
 from app.stats_engine.registry import get_test, render_template, render_posthoc, posthoc_label
 from app.stats_engine.regression import resolve_model, render_regression
 from app.stats_engine.assumption_checks import run_live_checks, PASS, FAIL, NOT_APPLICABLE
+from app.reports.stats_extract import extract_test_stats
 from app.profiling.cache import get_cached_profile
 from app.db.artifacts import find_similar_artifact
 from app.db.aio import run_db
@@ -182,6 +183,11 @@ async def _run_verified(session, context, var_a, var_b, recommended_test, reason
     if test_entry.get("posthoc") and p_value is not None and p_value < 0.05:
         posthoc = await _run_posthoc(sbx, test_entry["posthoc"], var_a, var_b)
 
+    # Publication-grade fields (df, N, effect-size value, per-group descriptives)
+    # re-derived deterministically from the same verified stdout, so the report
+    # layer can produce APA notation without re-running or guessing.
+    pub_stats = extract_test_stats(test_to_run, stdout)
+
     artifact_content = {
         "test_name": test_to_run,
         "display_name": test_entry["display_name"],
@@ -189,6 +195,7 @@ async def _run_verified(session, context, var_a, var_b, recommended_test, reason
         "assumption_results": checks, "interpretation": narration.plain_language_result,
         "raw_output": stdout, "suspect_result": narration.suspect_result, "suspect_reason": narration.suspect_reason,
         "posthoc": posthoc, "engine_verified": True, "alpha": 0.05,
+        **pub_stats,
     }
 
     response_text = narration.plain_language_result
@@ -447,6 +454,8 @@ def _parse_regression_output(stdout: str, resolved: dict[str, Any]) -> dict[str,
         "n": int(f("N")) if f("N") is not None else None,
         "r_squared": f("Pseudo R-squared") if model_type == "logistic" else f("R-squared"),
         "adj_r_squared": f("Adjusted R-squared"),
+        # F(df1, df2) for the linear model's omnibus test — used by the APA write-up.
+        "f_statistic": f("F-statistic") if model_type == "linear" else None,
         "p_value": p_value, "statistic": None,
         "coefficients": coefficients, "diagnostics": diagnostics,
         "reasoning": f"{display} of '{resolved['outcome']}' on {', '.join(resolved['predictors'])}.",

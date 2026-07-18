@@ -81,7 +81,7 @@ export interface StreamChunk {
   nudge_style?: NudgeStyle
   engine_verified?: boolean
   test_display_name?: string
-  report?: { markdown: string; filename: string; artifact_count: number; stages_covered: string[] }
+  report?: { markdown: string; filename: string; artifact_count: number; stages_covered: string[]; latex?: string; latex_filename?: string }
   route_to?: string
   shortcut?: "profile" | "cached_artifact"
 }

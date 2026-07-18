@@ -53,12 +53,29 @@ async def generate_report(session_id: str) -> dict[str, Any]:
     if test_results:
         sections.append(_build_summary_section(test_results))
 
+    # Goal 3: publication-grade (APA) write-up + LaTeX export, built purely from
+    # the reported (non-superseded) test artifacts. Wrapped so a formatting issue
+    # can never break the base report.
+    apa_tests = [a for a in artifacts if a.artifact_type == "test_result"]
+    latex = None
+    if apa_tests:
+        try:
+            from app.reports import apa
+            sections.append(apa.apa_markdown(session, artifacts, apa_tests))
+            latex = apa.apa_latex(session, artifacts, apa_tests)
+        except Exception:
+            latex = None
+
     markdown = "\n\n".join(sections)
     date_str = datetime.now().strftime("%Y%m%d")
     filename_base = session.dataset_filename.replace(".csv", "") if session.dataset_filename else "analysis"
     filename = f"{filename_base}_report_{date_str}.md"
 
-    return {"markdown": markdown, "filename": filename, "artifact_count": len(artifacts), "stages_covered": stages_covered}
+    result = {"markdown": markdown, "filename": filename, "artifact_count": len(artifacts), "stages_covered": stages_covered}
+    if latex:
+        result["latex"] = latex
+        result["latex_filename"] = f"{filename_base}_report_{date_str}.tex"
+    return result
 
 
 def _build_title(session, stages_covered):

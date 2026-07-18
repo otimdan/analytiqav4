@@ -105,6 +105,7 @@ r, p = stats.pearsonr(x, y)
 print(f"Pearson r: {r:.4f}")
 print(f"P-value: {p:.4f}")
 print(f"N: {len(x)}")
+print(f"df: {len(x) - 2}")
 """,
     "spearman": """
 import pandas as pd
@@ -118,6 +119,7 @@ rho, p = stats.spearmanr(x, y)
 print(f"Spearman rho: {rho:.4f}")
 print(f"P-value: {p:.4f}")
 print(f"N: {len(x)}")
+print(f"df: {len(x) - 2}")
 """,
     "independent_t": """
 import pandas as pd
@@ -135,6 +137,7 @@ print(f"Group 2 ({groups[1]}): mean={g2.mean():.4f}, n={len(g2)}")
 print(f"T-statistic: {t:.4f}")
 print(f"P-value: {p:.4f}")
 print(f"Cohen's d: {d:.4f}")
+print(f"df: {len(g1) + len(g2) - 2}")
 """,
     "welch_t": """
 import pandas as pd
@@ -147,11 +150,15 @@ g2 = df[df[__GROUPING__] == groups[1]][__OUTCOME__].dropna()
 t, p = stats.ttest_ind(g1, g2, equal_var=False)
 pooled_std = np.sqrt(((len(g1)-1)*g1.std()**2 + (len(g2)-1)*g2.std()**2) / (len(g1)+len(g2)-2))
 d = (g1.mean() - g2.mean()) / pooled_std
+v1, v2 = g1.var(ddof=1), g2.var(ddof=1)
+n1, n2 = len(g1), len(g2)
+welch_df = (v1/n1 + v2/n2)**2 / ((v1/n1)**2/(n1-1) + (v2/n2)**2/(n2-1))
 print(f"Group 1 ({groups[0]}): mean={g1.mean():.4f}, n={len(g1)}")
 print(f"Group 2 ({groups[1]}): mean={g2.mean():.4f}, n={len(g2)}")
 print(f"T-statistic: {t:.4f}")
 print(f"P-value: {p:.4f}")
 print(f"Cohen's d: {d:.4f}")
+print(f"df: {welch_df:.2f}")
 """,
     "mann_whitney": """
 import pandas as pd
@@ -181,6 +188,8 @@ epsilon_sq = (h - len(groups) + 1) / (n - len(groups))
 print(f"H-statistic: {h:.4f}")
 print(f"P-value: {p:.4f}")
 print(f"Epsilon-squared: {epsilon_sq:.4f}")
+print(f"df: {len(groups) - 1}")
+print(f"N: {n}")
 for label, g in zip(group_labels, groups):
     print(f"  {label}: median={g.median():.4f}, n={len(g)}")
 """,
@@ -197,6 +206,7 @@ print(f"Chi-square statistic: {chi2:.4f}")
 print(f"P-value: {p:.4f}")
 print(f"Degrees of freedom: {dof}")
 print(f"Cramer's V: {cramers_v:.4f}")
+print(f"N: {int(n)}")
 """,
     "fisher_exact": """
 import pandas as pd
@@ -222,9 +232,12 @@ grand_mean = df[__OUTCOME__].mean()
 ss_between = sum(len(g) * (g.mean() - grand_mean)**2 for g in groups)
 ss_total = sum((df[__OUTCOME__].dropna() - grand_mean)**2)
 eta_sq = ss_between / ss_total
+_n_total = sum(len(g) for g in groups)
 print(f"F-statistic: {f:.4f}")
 print(f"P-value: {p:.4f}")
 print(f"Eta-squared: {eta_sq:.4f}")
+print(f"df: {len(groups) - 1}, {_n_total - len(groups)}")
+print(f"N: {_n_total}")
 for label, g in zip(group_labels, groups):
     print(f"  {label}: mean={g.mean():.4f}, n={len(g)}")
 """,
@@ -259,6 +272,8 @@ eta_sq = ss_between / ss_total if ss_total else float('nan')
 print(f"F-statistic: {F:.4f}")
 print(f"P-value: {p:.4f}")
 print(f"Eta-squared: {eta_sq:.4f}")
+print(f"df: {df1}, {df2:.2f}")
+print(f"N: {int(n_i.sum())}")
 for label, g in grouped:
     print(f"  {label}: mean={g.mean():.4f}, n={len(g)}")
 """,

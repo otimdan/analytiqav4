@@ -75,18 +75,28 @@ export function DataExplorer({ datasetFilename, rowCount, images, reports }: Dat
           {reports.length ? (
             <div className="flex flex-col gap-2">
               {reports.map((r, i) => (
-                <a
-                  key={i}
-                  href={`data:text/markdown;charset=utf-8,${encodeURIComponent(r.markdown)}`}
-                  download={r.filename}
-                  className="flex items-center gap-2.5 rounded-lg border border-gray-200 bg-white px-3 py-2.5 transition-colors hover:bg-gray-50"
-                >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-indigo-50 text-indigo-600"><ReportIcon /></span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium text-gray-800">{r.filename}</span>
-                    <span className="block text-[11px] text-gray-400">{r.artifact_count} artifacts · {r.stages_covered.length} stages</span>
-                  </span>
-                </a>
+                <div key={i} className="rounded-lg border border-gray-200 bg-white">
+                  <a
+                    href={`data:text/markdown;charset=utf-8,${encodeURIComponent(r.markdown)}`}
+                    download={r.filename}
+                    className="flex items-center gap-2.5 px-3 py-2.5 transition-colors hover:bg-gray-50"
+                  >
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-indigo-50 text-indigo-600"><ReportIcon /></span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-gray-800">{r.filename}</span>
+                      <span className="block text-[11px] text-gray-400">{r.artifact_count} artifacts · {r.stages_covered.length} stages</span>
+                    </span>
+                  </a>
+                  {r.latex && (
+                    <a
+                      href={`data:application/x-tex;charset=utf-8,${encodeURIComponent(r.latex)}`}
+                      download={r.latex_filename || "report.tex"}
+                      className="block border-t border-gray-100 px-3 py-1.5 text-[11px] font-medium text-indigo-600 transition-colors hover:bg-indigo-50"
+                    >
+                      Download LaTeX (.tex) — APA write-up
+                    </a>
+                  )}
+                </div>
               ))}
             </div>
           ) : <Empty>Generated reports will appear here.</Empty>}
