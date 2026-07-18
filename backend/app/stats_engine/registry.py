@@ -293,3 +293,78 @@ def render_template(template_key: str, *, col_a: str, col_b: str) -> str | None:
         .replace("__OUTCOME__", a)
         .replace("__GROUPING__", b)
     )
+
+
+# ── Post-hoc pairwise comparisons (which groups differ after a significant
+#    3+-group omnibus test) ──────────────────────────────────────────────────
+# Maps the registry `posthoc` name to a pairwise method. Tukey HSD is the real
+# thing (scipy); the Welch/Mann-Whitney variants are Holm-Bonferroni-corrected
+# pairwise tests — dependency-safe, standard alternatives to Games-Howell/Dunn.
+_POSTHOC_METHOD = {"tukey": "tukey", "games_howell": "welch", "dunn_bonferroni": "mannwhitney"}
+
+_POSTHOC_LABEL = {
+    "tukey": "Tukey HSD",
+    "games_howell": "pairwise Welch t-tests (Holm-corrected)",
+    "dunn_bonferroni": "pairwise Mann-Whitney tests (Holm-corrected)",
+}
+
+_POSTHOC_TEMPLATE = """
+import pandas as pd, numpy as np
+from scipy import stats
+from itertools import combinations
+df = pd.read_csv('/home/user/data.csv')
+grouped = {str(label): g[__OUTCOME__].dropna().values for label, g in df.groupby(__GROUPING__)}
+labels = [l for l in grouped if len(grouped[l]) > 1]
+method = __METHOD__
+print("=== POSTHOC ===")
+done = False
+if method == "tukey":
+    try:
+        from scipy.stats import tukey_hsd
+        res = tukey_hsd(*[grouped[l] for l in labels])
+        for i, j in combinations(range(len(labels)), 2):
+            p = float(res.pvalue[i, j])
+            print(f"{labels[i]} vs {labels[j]}: p_adj={p:.4f}, significant={'yes' if p < 0.05 else 'no'}")
+        done = True
+    except Exception:
+        method = "student"  # fall back to pairwise t + Holm
+if not done:
+    pairs = list(combinations(labels, 2))
+    ps = []
+    for x, y in pairs:
+        gx, gy = grouped[x], grouped[y]
+        if method == "welch":
+            _, p = stats.ttest_ind(gx, gy, equal_var=False)
+        elif method == "mannwhitney":
+            _, p = stats.mannwhitneyu(gx, gy, alternative="two-sided")
+        else:
+            _, p = stats.ttest_ind(gx, gy, equal_var=True)
+        ps.append(float(p))
+    m = len(ps)
+    order = sorted(range(m), key=lambda i: ps[i])
+    adj = [0.0] * m
+    run = 0.0
+    for rank, idx in enumerate(order):
+        run = max(run, min(1.0, (m - rank) * ps[idx]))
+        adj[idx] = run
+    for (x, y), pa in zip(pairs, adj):
+        print(f"{x} vs {y}: p_adj={pa:.4f}, significant={'yes' if pa < 0.05 else 'no'}")
+"""
+
+
+def posthoc_label(posthoc_key: str) -> str:
+    return _POSTHOC_LABEL.get(posthoc_key, "pairwise comparisons")
+
+
+def render_posthoc(posthoc_key: str, outcome: str, grouping: str) -> str | None:
+    """Fill the post-hoc template for a given omnibus test's posthoc method.
+    outcome = the numeric column, grouping = the categorical column."""
+    method = _POSTHOC_METHOD.get(posthoc_key)
+    if method is None:
+        return None
+    return (
+        _POSTHOC_TEMPLATE
+        .replace("__OUTCOME__", repr(outcome))
+        .replace("__GROUPING__", repr(grouping))
+        .replace("__METHOD__", repr(method))
+    )

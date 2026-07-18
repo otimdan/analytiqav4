@@ -115,6 +115,15 @@ def _format_test_result(content, var_str):
         for check, result in assumption_results.items():
             if result != "not_applicable":
                 lines.append(f"- {check.replace('_', ' ').title()}: {result}")
+    posthoc = content.get("posthoc")
+    if posthoc and posthoc.get("comparisons"):
+        lines.append("")
+        lines.append(f"**Post-hoc pairwise comparisons ({posthoc.get('method', '')}):**")
+        lines.append("")
+        lines.append("| Comparison | Adjusted p | Significant? |")
+        lines.append("|------------|-----------|--------------|")
+        for c in posthoc["comparisons"]:
+            lines.append(f"| {c['group_a']} vs {c['group_b']} | {c['p_adj']:.4f} | {'Yes' if c['significant'] else 'No'} |")
     if interpretation: lines.append(f"\n**Interpretation:**\n{interpretation}")
     suspect = content.get("suspect_result", False)
     suspect_reason = content.get("suspect_reason", "")

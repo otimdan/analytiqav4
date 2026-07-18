@@ -14,7 +14,7 @@ from app.stats_engine.test_selector import (
     resolve_pair, decide_test, resolve_requested_test,
     is_multivariate_request, get_multivariate_fallback_message, explain_test_choice,
 )
-from app.stats_engine.registry import get_test, render_template
+from app.stats_engine.registry import get_test, render_template, render_posthoc, posthoc_label
 from app.stats_engine.regression import resolve_model, render_regression
 from app.stats_engine.assumption_checks import run_live_checks, PASS, FAIL, NOT_APPLICABLE
 from app.profiling.cache import get_cached_profile
@@ -176,16 +176,24 @@ async def _run_verified(session, context, var_a, var_b, recommended_test, reason
     p_value = _extract_p_value(stdout)
     statistic = _extract_statistic(stdout)
 
+    # Post-hoc: for a SIGNIFICANT 3+-group omnibus test (ANOVA / Welch-ANOVA /
+    # Kruskal), run pairwise comparisons to show WHICH groups differ.
+    posthoc = None
+    if test_entry.get("posthoc") and p_value is not None and p_value < 0.05:
+        posthoc = await _run_posthoc(sbx, test_entry["posthoc"], var_a, var_b)
+
     artifact_content = {
         "test_name": test_to_run,
         "display_name": test_entry["display_name"],
         "p_value": p_value, "statistic": statistic, "variables": [var_a, var_b], "reasoning": reasoning,
         "assumption_results": checks, "interpretation": narration.plain_language_result,
         "raw_output": stdout, "suspect_result": narration.suspect_result, "suspect_reason": narration.suspect_reason,
-        "engine_verified": True, "alpha": 0.05,
+        "posthoc": posthoc, "engine_verified": True, "alpha": 0.05,
     }
 
     response_text = narration.plain_language_result
+    if posthoc and posthoc.get("comparisons"):
+        response_text += "\n\n" + _posthoc_summary(posthoc)
     if narration.suspect_result and narration.suspect_reason:
         response_text += f"\n\n⚠️ Note: {narration.suspect_reason}"
 
@@ -199,6 +207,33 @@ async def _run_verified(session, context, var_a, var_b, recommended_test, reason
         "engine_verified": True, "test_display_name": test_entry["display_name"],
         "is_hypothesis_candidate": False, "metered": True,
     }
+
+
+# ── Post-hoc (which groups differ) ────────────────────────────────────────────
+
+async def _run_posthoc(sbx, posthoc_key: str, outcome: str, grouping: str) -> Optional[dict[str, Any]]:
+    code = render_posthoc(posthoc_key, outcome, grouping)
+    if not code:
+        return None
+    exec_result = await execute_code(sbx, code)
+    return _parse_posthoc(exec_result.get("stdout", ""), posthoc_key)
+
+
+def _parse_posthoc(stdout: str, posthoc_key: str) -> Optional[dict[str, Any]]:
+    comps = []
+    for m in re.finditer(r"^(.+?) vs (.+?): p_adj=([0-9.eE\-]+), significant=(yes|no)", stdout, re.MULTILINE):
+        comps.append({"group_a": m.group(1), "group_b": m.group(2), "p_adj": float(m.group(3)), "significant": m.group(4) == "yes"})
+    if not comps:
+        return None
+    return {"method": posthoc_label(posthoc_key), "comparisons": comps}
+
+
+def _posthoc_summary(posthoc: dict[str, Any]) -> str:
+    sig = [f"{c['group_a']} vs {c['group_b']} (p={c['p_adj']:.3f})" for c in posthoc["comparisons"] if c["significant"]]
+    method = posthoc["method"]
+    if sig:
+        return f"**Post-hoc ({method}):** significant pairwise differences — " + "; ".join(sig) + "."
+    return f"**Post-hoc ({method}):** the overall test was significant, but no pair survived correction."
 
 
 # ── Guided assumption-check pause ─────────────────────────────────────────────
