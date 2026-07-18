@@ -18,6 +18,14 @@ from app.orchestrator.validator import validate_output, get_fallback_message
 
 from app.regimes import advisory, pedagogy, exploratory, confirmatory, orientation, meta, cleaning
 from app.logging_config import logger
+from app.observability import capture_event
+
+
+def _analytics_id(session, updated_session) -> str:
+    """Distinct id for analytics: the user when known, else the session (so
+    anonymous funnels still count). Never carries dataset content."""
+    uid = getattr(updated_session, "user_id", None) or getattr(session, "user_id", None)
+    return str(uid) if uid else str(session.id)
 
 
 async def process_message(
@@ -136,6 +144,15 @@ async def process_message(
     except Exception as e:
         logger.warning("Artifact persistence failed (continuing without it): %s", e)
 
+    if regime in ("exploratory", "confirmatory"):
+        capture_event(_analytics_id(session, updated_session), "analysis_run", {
+            "regime": regime,
+            "engine_verified": raw_result.get("engine_verified", True),
+            "test": raw_result.get("test_display_name"),  # a test name, not data
+            "mode": getattr(updated_session, "mode", "explore"),
+            "has_chart": bool(raw_result.get("images")),
+        })
+
     new_count = await run_db(increment_feedback_count, str(session.id))
     show_feedback = new_count % FEEDBACK_EVERY_N_TURNS == 0
 
@@ -158,7 +175,13 @@ async def process_message(
     # meta report handler's "download it below" text had nothing below it — the
     # report chunk was never emitted (pre-existing gap).
     if raw_result.get("report"):
-        yield {"type": "report", "report": raw_result["report"], "regime": regime, "show_feedback": False}
+        report = raw_result["report"]
+        capture_event(_analytics_id(session, updated_session), "report_generated", {
+            "artifact_count": report.get("artifact_count"),
+            "stages": len(report.get("stages_covered") or []),
+            "has_latex": bool(report.get("latex")),
+        })
+        yield {"type": "report", "report": report, "regime": regime, "show_feedback": False}
 
     # Nudges are always eligible now (mode replaced the suggestion_mode gate).
     # nudge_style tells the UI to render it directive (guided) or soft (explore).

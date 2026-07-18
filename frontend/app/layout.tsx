@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import "./globals.css"
+import { Providers } from "./providers"
 
 export const metadata: Metadata = {
   title: "Analytika — AI research data analysis",
@@ -12,7 +13,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       {/* The full-screen scroll lock the chat app needs lives in app/app/layout.tsx,
           so marketing/auth pages at the root can scroll normally. */}
       <body className="min-h-screen bg-background text-foreground antialiased">
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   )

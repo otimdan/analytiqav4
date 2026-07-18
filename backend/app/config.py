@@ -44,6 +44,17 @@ ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://local
 QUERY_RATE_PER_MIN = int(os.getenv("QUERY_RATE_PER_MIN", "20"))
 UPLOAD_RATE_PER_MIN = int(os.getenv("UPLOAD_RATE_PER_MIN", "10"))
 
+# ── Observability (all OPTIONAL) ──────────────────────────────
+# Everything here is inert until set: no DSN → Sentry off; no PostHog key →
+# analytics off. Nothing about the app's behaviour changes when they're unset,
+# so local/dev runs need no configuration.
+SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+SENTRY_ENVIRONMENT = os.getenv("SENTRY_ENVIRONMENT", "development")
+# Fraction of requests traced for performance monitoring (0 = errors only).
+SENTRY_TRACES_SAMPLE_RATE = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0"))
+POSTHOG_API_KEY = os.getenv("POSTHOG_API_KEY", "")
+POSTHOG_HOST = os.getenv("POSTHOG_HOST", "https://us.i.posthog.com")
+
 CHI_SQUARE_MIN_EXPECTED_CELL = int(os.getenv("CHI_SQUARE_MIN_EXPECTED_CELL", "5"))
 MIN_SAMPLE_SIZE_PER_GROUP = int(os.getenv("MIN_SAMPLE_SIZE_PER_GROUP", "20"))
 
