@@ -1,0 +1,13 @@
+Customer Name,Total $,region,constant_col,all_missing,score
+Ada Lovelace,"$1,200.00",East,ACTIVE,,78
+Alan Turing,$980.50,West,ACTIVE,,82
+Grace Hopper,"$1,050.00",East,ACTIVE,,91
+Katherine Johnson,"$2,300.75",West,ACTIVE,,88
+Ada Lovelace,"$1,200.00",East,ACTIVE,,78
+Edsger Dijkstra,$40.00,North,ACTIVE,,12
+Barbara Liskov,"$1,999,999.00",South,ACTIVE,,99
+Donald Knuth,$760.25,North,ACTIVE,,65
+Margaret Hamilton,"$1,340.00",East,ACTIVE,,84
+John von Neumann,$0.00,West,ACTIVE,,0
+Claude Shannon,$650.00,South,ACTIVE,,71
+Tim Berners-Lee,"$1,120.00",North,ACTIVE,,77

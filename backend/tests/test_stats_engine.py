@@ -162,10 +162,20 @@ class TestTestSelector:
         result = select_test("sex", "outcome", profile)
         assert result["recommended_test"] == "chi_square"
 
-    def test_fisher_small_sample_categorical(self):
-        profile = _make_profile(row_count=20, sex=_categorical_col(n_groups=4), outcome=_categorical_col(n_groups=3))
+    def test_fisher_two_by_two_small_cells(self):
+        # Genuine 2x2 with small expected cells -> Fisher's exact (which the
+        # template supports only for 2x2).
+        profile = _make_profile(row_count=16, sex=_categorical_col(n_groups=2), outcome=_categorical_col(n_groups=2))
         result = select_test("sex", "outcome", profile)
         assert result["recommended_test"] == "fisher_exact"
+
+    def test_large_sparse_categorical_uses_chi_square(self):
+        # A >2x2 table with small cells CANNOT use the Fisher template (2x2 only),
+        # so the engine falls back to chi-square with a small-cells caveat.
+        profile = _make_profile(row_count=20, sex=_categorical_col(n_groups=4), outcome=_categorical_col(n_groups=3))
+        result = select_test("sex", "outcome", profile)
+        assert result["recommended_test"] == "chi_square"
+        assert "caution" in result["reasoning"].lower() or "small" in result["reasoning"].lower()
 
     def test_identifier_triggers_clarification(self):
         profile = _make_profile(row_count=200, patient_id=_id_col(), score=_numeric_col())

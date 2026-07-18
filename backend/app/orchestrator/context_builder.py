@@ -12,17 +12,30 @@ def build_context(session: Session, recent_messages: list[Message]) -> dict[str,
     profile = get_cached_profile(str(session.id))
     profile_summary = _build_profile_summary(profile, session.dataset_filename or "dataset")
     hypothesis_context = _build_hypothesis_context(session)
-    artifact_summary = _build_artifact_summary(str(session.id))
+    artifacts = get_artifacts_for_session(str(session.id), include_superseded=False)
+    artifact_summary = _build_artifact_summary(artifacts)
+    focus_variables = _most_recent_variables(artifacts)
     trimmed_turns = _trim_recent_turns(recent_messages)
     return {
         "profile_summary": profile_summary,
         "hypothesis_context": hypothesis_context,
         "artifact_summary": artifact_summary,
+        # The variables the user was last working with (last chart/test). Lets a
+        # follow-up like "is that significant?" reuse them instead of re-asking.
+        "focus_variables": focus_variables,
         "recent_turns": trimmed_turns,
-        "suggestion_mode": session.suggestion_mode,
-        "hypothesis_on_record": session.hypothesis_on_record,
+        # Explicit task mode drives handler behavior (directive vs soft nudges,
+        # the guided assumption-check pause) — replaces the old inferred booleans.
+        "mode": getattr(session, "mode", "explore"),
         "dataset_filename": session.dataset_filename or "dataset",
     }
+
+
+def _most_recent_variables(artifacts: list[Artifact]) -> list[str]:
+    for artifact in reversed(artifacts):
+        if artifact.variables_involved and len(artifact.variables_involved) >= 2:
+            return list(artifact.variables_involved)
+    return []
 
 
 def _build_profile_summary(profile: dict[str, Any] | None, dataset_filename: str) -> str:
@@ -46,7 +59,9 @@ def _build_profile_summary(profile: dict[str, Any] | None, dataset_filename: str
 
 
 def _build_hypothesis_context(session: Session) -> str:
-    if not session.hypothesis_on_record or not session.hypothesis_text:
+    # Keyed off the captured question text (mode drives the rail now, not the old
+    # hypothesis_on_record flag).
+    if not session.hypothesis_text:
         return ""
     lines = [f"Research question: {session.hypothesis_text}"]
     if session.hypothesis_columns:
@@ -55,8 +70,7 @@ def _build_hypothesis_context(session: Session) -> str:
     return "\n".join(lines)
 
 
-def _build_artifact_summary(session_id: str) -> str:
-    artifacts = get_artifacts_for_session(session_id, include_superseded=False)
+def _build_artifact_summary(artifacts: list[Artifact]) -> str:
     if not artifacts:
         return ""
     lines = ["Completed analyses this session:"]
@@ -74,10 +88,16 @@ def _summarise_artifact(artifact: Artifact) -> str:
     var_str = " vs ".join(variables) if variables else ""
     content = artifact.content or {}
     if atype == "test_result":
-        test = content.get("test_name", "test")
+        test = content.get("display_name") or content.get("test_name", "test")
         p = content.get("p_value")
         p_str = f", p={p:.3f}" if p is not None else ""
-        return f"{stage}: {test} on {var_str}{p_str}"
+        # Hedge assisted-tier results so a later LLM turn doesn't cite them with
+        # the same confidence as a verified test.
+        tier = "" if content.get("engine_verified", True) else " (LLM-assisted, unverified)"
+        return f"{stage}: {test} on {var_str}{p_str}{tier}"
+    if atype == "assumption_check":
+        rec = content.get("display_name") or content.get("recommended_test", "a test")
+        return f"{stage}: assumption checks for {var_str} → {rec}"
     if atype == "chart":
         chart_type = content.get("chart_type", "chart")
         return f"{stage}: {chart_type} of {var_str}"

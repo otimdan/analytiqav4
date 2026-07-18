@@ -1,7 +1,8 @@
+export type TaskMode = "explore" | "guided"
+
 export interface SessionState {
   session_id: string
-  hypothesis_on_record: boolean
-  suggestion_mode: boolean
+  mode: TaskMode
   hypothesis_text: string | null
   dataset_filename: string | null
   profile_summary: ProfileSummary | null
@@ -24,12 +25,14 @@ export interface UploadResponse {
   profile_summary: ProfileSummary
 }
 
+export type NudgeStyle = "directive" | "soft"
+
 export type MessageRole = "user" | "assistant"
 
 export type ChunkType =
   | "text" | "image" | "disambiguation" | "confirmation_prompt"
   | "guidance_suggestion" | "cached_artifact" | "report"
-  | "meta" | "error" | "done" | "code_execution"
+  | "meta" | "error" | "done" | "code_execution" | "verification"
 
 export interface CodeExecution {
   code: string
@@ -75,7 +78,10 @@ export interface StreamChunk {
   prompt?: { question: string; options: string[] }
   is_hypothesis_candidate?: boolean
   next_action?: NextAction | null
-  report?: { markdown: string; filename: string; artifact_count: number; stages_covered: string[] }
+  nudge_style?: NudgeStyle
+  engine_verified?: boolean
+  test_display_name?: string
+  report?: { markdown: string; filename: string; artifact_count: number; stages_covered: string[]; latex?: string; latex_filename?: string }
   route_to?: string
   shortcut?: "profile" | "cached_artifact"
 }
@@ -92,7 +98,12 @@ export interface Message {
   confirmation_prompt?: string
   guidance_suggestion?: string
   guidance_next_action?: NextAction | null
+  guidance_style?: NudgeStyle
   is_hypothesis_candidate?: boolean
+  // Verification badge for a statistical result: true = verified test library,
+  // false = LLM-assisted (unverified). undefined = not a test result.
+  engine_verified?: boolean
+  verified_test_name?: string
   report?: StreamChunk["report"]
   executions?: CodeExecution[]
   server_message_id?: string
@@ -105,12 +116,22 @@ export interface MessageHistoryItem {
   content: string
   regime?: string | null
   executions?: CodeExecution[]
+  images?: ChartImage[]
   created_at: string | null
+}
+
+export interface TaskSummary {
+  id: string
+  title: string
+  dataset_filename: string | null
+  created_at: string | null
+  last_active_at: string | null
+  dataset_ready: boolean
 }
 
 export type ArtifactStage =
   | "data_preparation" | "descriptive" | "inferential"
-  | "visualisation" | "interpretation"
+  | "visualisation" | "interpretation" | "assumption_checks"
 
 export type ArtifactType =
   | "chart" | "table" | "test_result" | "cleaned_dataset"
@@ -131,24 +152,55 @@ export interface Artifact {
 }
 
 export interface GuidanceState {
-  hypothesis_on_record: boolean
-  suggestion_mode: boolean
+  mode: TaskMode
+  is_guided: boolean
   hypothesis_text: string | null
 }
 
-export interface RailStage {
-  key: ArtifactStage
-  label: string
-  completed: boolean
+// ── Guided-mode step rail ────────────────────────────────────────────────────
+// The seven pipeline stages shown in the guided rail. Completion is derived
+// purely from artifact existence + session state (no parallel progress store).
+export type GuidedStageKey =
+  | "dataset" | "variable_typing" | "assumption_checks"
+  | "test_selection" | "run" | "interpret" | "report"
+
+export const GUIDED_STAGES: { key: GuidedStageKey; label: string }[] = [
+  { key: "dataset", label: "Dataset" },
+  { key: "variable_typing", label: "Variable Typing" },
+  { key: "assumption_checks", label: "Assumption Checks" },
+  { key: "test_selection", label: "Test Selection" },
+  { key: "run", label: "Run Test" },
+  { key: "interpret", label: "Interpret" },
+  { key: "report", label: "Report" },
+]
+
+export interface GuidedProgressInputs {
+  hasDataset: boolean
+  hasProfile: boolean
+  completedStages: Set<ArtifactStage>
+  hasReport: boolean
 }
 
-export const RAIL_STAGES: RailStage[] = [
-  { key: "data_preparation", label: "Data Preparation", completed: false },
-  { key: "descriptive", label: "Descriptive Stats", completed: false },
-  { key: "inferential", label: "Inferential Analysis", completed: false },
-  { key: "visualisation", label: "Visualisation", completed: false },
-  { key: "interpretation", label: "Interpretation", completed: false },
-]
+// Map the artifact-derived signals onto the seven rail steps. Some steps share a
+// signal (a single confirmatory run produces the assumption-check + test-result
+// artifacts together), so the rail can advance more than one node per turn —
+// consistent with "completion derives from artifacts".
+export function deriveGuidedProgress(i: GuidedProgressInputs): Set<GuidedStageKey> {
+  const done = new Set<GuidedStageKey>()
+  if (i.hasDataset) done.add("dataset")
+  if (i.hasProfile) done.add("variable_typing")
+  const assumptionsDone = i.completedStages.has("assumption_checks") || i.completedStages.has("inferential")
+  if (assumptionsDone) {
+    done.add("assumption_checks")
+    done.add("test_selection")
+  }
+  if (i.completedStages.has("inferential")) {
+    done.add("run")
+    done.add("interpret")
+  }
+  if (i.hasReport) done.add("report")
+  return done
+}
 
 export interface FeedbackRequest {
   session_id: string

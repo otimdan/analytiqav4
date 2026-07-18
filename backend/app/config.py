@@ -13,6 +13,10 @@ FIREWORKS_MODEL_CLASSIFIER = os.getenv("FIREWORKS_MODEL_CLASSIFIER", "accounts/f
 FIREWORKS_MODEL_CHAT = os.getenv("FIREWORKS_MODEL_CHAT", "accounts/fireworks/models/gpt-oss-120b")
 
 E2B_API_KEY = os.getenv("E2B_API_KEY", "")
+# Optional custom E2B template id/name (see backend/e2b/). When set, the sandbox
+# is created from an image that preinstalls statsmodels (verified regression), so
+# it doesn't self-install per session. Unset = the default code-interpreter image.
+E2B_TEMPLATE = os.getenv("E2B_TEMPLATE", "")
 
 SANDBOX_TIMEOUT_SECONDS = int(os.getenv("SANDBOX_TIMEOUT_SECONDS", "3600"))
 

@@ -21,20 +21,48 @@ def classify_variable(column_name: str, profile: dict[str, Any]) -> str:
     uniqueness = col.get("uniqueness_ratio", 0)
     likely_categorical = col.get("likely_categorical", False)
     likely_datetime = col.get("likely_datetime", False)
+    is_float = "float" in dtype
+    is_int = "int" in dtype
+    is_numeric = is_float or is_int
+    # Object OR the newer pandas string dtype ('str'/'string') OR category.
+    is_stringy = ("object" in dtype) or ("str" in dtype) or ("categor" in dtype)
 
-    if semantic == "identifier" or uniqueness > 0.95:
-        return IDENTIFIER
-    if likely_datetime or semantic == "datetime":
+    # 1. Datetime only when the values ACTUALLY parse as dates — never from a
+    #    name guess alone (a text "session_time" of 'morning'/'evening' is
+    #    categorical, not datetime).
+    if likely_datetime:
         return DATETIME
+
+    # 2. Continuous float measurements are numeric, full stop. High uniqueness is
+    #    the norm for continuous data, so it must never mark a float as an id.
+    if is_float:
+        return NUMERIC_OR_ORDINAL if semantic == "ordinal_scale" else NUMERIC
+
+    # 3. An ordinal-scale NAME on an integer (a Likert score/grade/rating) keeps
+    #    its ordering for rank-based tests, even if few-valued — beats the
+    #    categorical heuristics. (Only for numeric ints: a *text* 'grade' of
+    #    'low/mid/high' can't be used ordinally without encoding, so it's
+    #    categorical and handled below.)
+    if is_int and semantic == "ordinal_scale":
+        return NUMERIC_OR_ORDINAL
+
+    # 4. Identifiers: an explicit name-based guess, or an all-unique NON-numeric
+    #    column (unique strings = names/emails/codes). A high-uniqueness numeric
+    #    column is continuous data, not an id, unless its name said so.
+    if semantic == "identifier":
+        return IDENTIFIER
+    if uniqueness > 0.95 and not is_numeric:
+        return IDENTIFIER
     if semantic == "free_text":
         return FREE_TEXT
-    if likely_categorical:
+
+    # 5. Categorical: profiler-flagged few-valued ints, string/object columns,
+    #    or a categorical-grouping name.
+    if likely_categorical or is_stringy or semantic == "categorical_grouping":
         return CATEGORICAL
-    if semantic == "ordinal_scale":
-        return NUMERIC_OR_ORDINAL
-    if "object" in dtype or "category" in dtype or semantic == "categorical_grouping":
-        return CATEGORICAL
-    if any(t in dtype for t in ["int", "float"]):
+
+    # 6. Any remaining numeric.
+    if is_numeric:
         return NUMERIC
 
     return UNKNOWN

@@ -76,7 +76,15 @@ def _acknowledge() -> dict[str, Any]:
 
 
 def _navigate() -> dict[str, Any]:
-    return {"text": "", "images": [], "artifact_content": None, "artifact_type": None, "stage": None, "variables_involved": None, "code_used": None, "suggested_next": None, "is_hypothesis_candidate": False, "frontend_action": "navigate_back"}
+    # There's no wizard to step "back" through in the chat UI, so give a real,
+    # actionable answer instead of an empty reply (the old frontend_action was
+    # never consumed, which left a permanent blank bubble for "reset/start over").
+    return _empty_result(
+        "To start a fresh analysis, click **New task** in the sidebar (top-left) — "
+        "that begins a new task with a new dataset. I can't undo earlier steps mid-"
+        "conversation, but just tell me what you'd like to do next and we'll pick up "
+        "from there."
+    )
 
 
 def _is_acceptance(msg): return bool(re.search(r"^(yes|yeah|yep|sure|ok|okay|go ahead|do it|track it|yes please|let'?s do it|yes[,.]?\s*(track it|do it|go ahead|proceed))", msg, re.IGNORECASE))

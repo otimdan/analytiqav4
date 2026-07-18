@@ -11,11 +11,18 @@ endpoint — no shared secret needed. A legacy HS256 path (shared secret) is kep
 as a fallback for older tokens if `SUPABASE_JWT_SECRET` happens to be set.
 """
 import asyncio
+from datetime import timedelta
 import jwt
 from jwt import PyJWKClient
 from fastapi import Header, HTTPException
 
 from app.config import SUPABASE_URL, SUPABASE_JWT_SECRET
+
+# Tolerate small clock skew between Supabase's auth server and this backend.
+# Without leeway, PyJWT's zero-tolerance iat/exp checks reject freshly-issued
+# tokens whenever the issuer's clock is even a fraction of a second ahead,
+# causing intermittent spurious 401s ("token not yet valid").
+_JWT_LEEWAY = timedelta(seconds=60)
 
 
 class AuthUser:
@@ -42,9 +49,9 @@ def _verify(token: str) -> dict:
     if alg == "HS256":
         if not SUPABASE_JWT_SECRET:
             raise HTTPException(status_code=401, detail="Invalid authentication token.")
-        return jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], audience="authenticated")
+        return jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=["HS256"], audience="authenticated", leeway=_JWT_LEEWAY)
     signing_key = _jwks().get_signing_key_from_jwt(token)
-    return jwt.decode(token, signing_key.key, algorithms=["ES256", "RS256"], audience="authenticated")
+    return jwt.decode(token, signing_key.key, algorithms=["ES256", "RS256"], audience="authenticated", leeway=_JWT_LEEWAY)
 
 
 async def get_current_user(authorization: str | None = Header(default=None)) -> AuthUser:

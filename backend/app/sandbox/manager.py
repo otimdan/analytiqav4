@@ -1,7 +1,7 @@
 import asyncio
 from e2b_code_interpreter import Sandbox
 
-from app.config import E2B_API_KEY, SANDBOX_TIMEOUT_SECONDS
+from app.config import E2B_API_KEY, SANDBOX_TIMEOUT_SECONDS, E2B_TEMPLATE
 from app.db.sessions import get_session, update_sandbox_id, clear_sandbox_id
 from app.db.artifacts import get_code_replay_sequence
 from app.sandbox.chart_theme import CHART_THEME_BOOTSTRAP
@@ -53,17 +53,25 @@ async def get_or_create_sandbox(session_id: str) -> Sandbox:
     return await _create_and_mount(session_id)
 
 
+def _create_sandbox(session_id: str) -> Sandbox:
+    """Create a sandbox. If a custom E2B_TEMPLATE is configured (image with
+    statsmodels preinstalled), use it — falling back to the default image if that
+    template isn't available, so a misconfigured template never breaks creation."""
+    kwargs = dict(timeout=SANDBOX_TIMEOUT_SECONDS, metadata={"session": session_id}, api_key=E2B_API_KEY)
+    if E2B_TEMPLATE:
+        try:
+            return Sandbox.create(template=E2B_TEMPLATE, **kwargs)
+        except Exception as e:
+            logger.warning("Custom E2B template %r failed (%s); falling back to default image.", E2B_TEMPLATE, e)
+    return Sandbox.create(**kwargs)
+
+
 async def _create_and_mount(session_id: str) -> Sandbox:
     session = await asyncio.to_thread(get_session, session_id)
     if not session:
         raise ValueError(f"Session {session_id} not found")
 
-    sbx: Sandbox = await asyncio.to_thread(
-        Sandbox.create,
-        timeout=SANDBOX_TIMEOUT_SECONDS,
-        metadata={"session": session_id},
-        api_key=E2B_API_KEY,
-    )
+    sbx: Sandbox = await asyncio.to_thread(_create_sandbox, session_id)
 
     await asyncio.to_thread(update_sandbox_id, session_id, sbx.sandbox_id)
     await _apply_chart_theme(sbx)

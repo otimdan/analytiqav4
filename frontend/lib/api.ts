@@ -1,4 +1,4 @@
-import type { UploadResponse, SessionState, FeedbackRequest, Artifact, MessageHistoryItem, UsageSummary, Plan } from "./types"
+import type { UploadResponse, SessionState, FeedbackRequest, Artifact, MessageHistoryItem, UsageSummary, Plan, TaskSummary, TaskMode } from "./types"
 import { authHeader } from "./supabase/token"
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
@@ -20,9 +20,10 @@ async function apiFetch<T>(path: string, options: RequestInit & { sessionId?: st
   return res.json()
 }
 
-export async function uploadDataset(file: File): Promise<UploadResponse> {
+export async function uploadDataset(file: File, mode: TaskMode = "explore"): Promise<UploadResponse> {
   const form = new FormData()
   form.append("file", file)
+  form.append("mode", mode)
   const res = await fetch(`${BASE_URL}/session/upload`, { method: "POST", body: form, headers: await authHeader() })
   if (!res.ok) {
     const error = await res.json().catch(() => ({ detail: "Upload failed" }))
@@ -45,6 +46,18 @@ export async function closeSession(sessionId: string): Promise<void> {
 
 export async function resetConversation(sessionId: string): Promise<void> {
   await apiFetch(`/session/${sessionId}/reset`, { method: "POST", sessionId })
+}
+
+export async function listTasks(): Promise<TaskSummary[]> {
+  return apiFetch<TaskSummary[]>("/session/list")
+}
+
+export async function renameTask(sessionId: string, title: string): Promise<void> {
+  await apiFetch(`/session/${sessionId}/title`, { method: "POST", sessionId, body: JSON.stringify({ title }) })
+}
+
+export async function deleteTask(sessionId: string): Promise<void> {
+  await apiFetch(`/session/${sessionId}/delete`, { method: "POST", sessionId })
 }
 
 export async function getArtifacts(sessionId: string): Promise<Artifact[]> {

@@ -41,7 +41,7 @@ numpy==1.26.4
 scipy==1.14.0
 matplotlib==3.9.2
 seaborn==0.13.2
-statsmodels==0.14.2
+statsmodels==0.14.6
 
 # ── Post-hoc tests ────────────────────────────────────────────
 scikit-posthocs==0.9.1

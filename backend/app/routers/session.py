@@ -1,6 +1,10 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
+from pydantic import BaseModel
 from app.db.models import Session, UploadResponse, SessionStateResponse
-from app.db.sessions import get_session, create_session as db_create_session
+from app.db.sessions import (
+    get_session, create_session as db_create_session,
+    get_sessions_for_user, update_title, delete_session as db_delete_session,
+)
 from app.db.artifacts import get_artifacts_for_session
 from app.db.aio import run_db
 from app.deps import get_current_session
@@ -16,11 +20,18 @@ router = APIRouter(prefix="/session", tags=["session"])
 
 
 @router.post("/upload", response_model=UploadResponse)
-async def upload_dataset(file: UploadFile = File(...), user: AuthUser = Depends(get_current_user)) -> UploadResponse:
+async def upload_dataset(
+    file: UploadFile = File(...),
+    mode: str = Form("explore"),
+    user: AuthUser = Depends(get_current_user),
+) -> UploadResponse:
     if not upload_limiter.allow(user.id):
         raise HTTPException(status_code=429, detail="Too many uploads in a short time. Please wait a moment.")
     if not file.filename or not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are accepted.")
+    # Task mode is chosen up front (mode picker) and fixed at creation.
+    if mode not in ("explore", "guided"):
+        mode = "explore"
 
     content = await file.read()
     try:
@@ -35,7 +46,7 @@ async def upload_dataset(file: UploadFile = File(...), user: AuthUser = Depends(
     if len(lines) < 2:
         raise HTTPException(status_code=400, detail="The file appears to be empty or has only headers.")
 
-    session = await run_db(db_create_session, dataset_filename=file.filename, dataset_csv=csv_text, user_id=user.id)
+    session = await run_db(db_create_session, dataset_filename=file.filename, dataset_csv=csv_text, user_id=user.id, mode=mode)
     sbx = await get_or_create_sandbox(str(session.id))
 
     try:
@@ -67,6 +78,35 @@ async def upload_dataset(file: UploadFile = File(...), user: AuthUser = Depends(
     )
 
 
+@router.get("/list")
+async def list_sessions(user: AuthUser = Depends(get_current_user)) -> list[dict]:
+    # The user's tasks for the sidebar, most-recently-active first.
+    return await run_db(get_sessions_for_user, user.id)
+
+
+class RenameRequest(BaseModel):
+    title: str
+
+
+@router.post("/{session_id}/title")
+async def rename_session(session_id: str, req: RenameRequest, session: Session = Depends(get_current_session)) -> dict:
+    title = req.title.strip()[:120]
+    if not title:
+        raise HTTPException(status_code=400, detail="Title cannot be empty.")
+    await run_db(update_title, str(session.id), title)
+    return {"ok": True, "title": title}
+
+
+@router.post("/{session_id}/delete")
+async def delete_session(session_id: str, session: Session = Depends(get_current_session)) -> dict:
+    # Ownership verified by get_current_session. Free the sandbox, then delete the
+    # task (messages/artifacts/feedback cascade).
+    owned_id = str(session.id)
+    await terminate_sandbox(owned_id)
+    await run_db(db_delete_session, owned_id)
+    return {"ok": True}
+
+
 @router.get("/{session_id}/state", response_model=SessionStateResponse)
 async def get_session_state(session_id: str, user: AuthUser = Depends(get_current_user)) -> SessionStateResponse:
     session = await run_db(get_session, session_id)
@@ -81,8 +121,7 @@ async def get_session_state(session_id: str, user: AuthUser = Depends(get_curren
 
     return SessionStateResponse(
         session_id=session_id,
-        hypothesis_on_record=session.hypothesis_on_record,
-        suggestion_mode=session.suggestion_mode,
+        mode=getattr(session, "mode", "explore"),
         hypothesis_text=session.hypothesis_text,
         dataset_filename=session.dataset_filename,
         profile_summary=profile_summary,
@@ -109,6 +148,7 @@ async def get_session_messages(session_id: str, user: AuthUser = Depends(get_cur
             "content": row["content"],
             "regime": row.get("regime"),
             "executions": row.get("executions") or [],
+            "images": row.get("images") or [],
             "created_at": row.get("created_at"),
         })
     return messages
