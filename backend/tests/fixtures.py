@@ -137,6 +137,16 @@ def logistic_regression_dataset() -> pd.DataFrame:
     return pd.DataFrame({"passed": passed, "hours_studied": np.round(hours, 2)})
 
 
+# ── messy data (cleaning) ─────────────────────────────────────────────────────
+def messy_dataset() -> pd.DataFrame:
+    return pd.DataFrame({
+        "price": ["$1,200", "$980", "1,050", None, "$2,000"],   # currency strings + missing
+        "age": [25, 30, None, 45, 200],                          # missing + an outlier (200)
+        "region": ["North", "north", "SOUTH", "South", "north"],  # inconsistent casing
+        "score": [10, 20, 30, 40, 50],
+    })
+
+
 # ── classification fixtures ──────────────────────────────────────────────────
 def classification_dataset() -> pd.DataFrame:
     r = _rng(9)
