@@ -69,7 +69,18 @@ def _err(reason: str) -> dict[str, Any]:
 
 # ── Templates (executed directly; only the repr()'d names/lists are injected) ──
 
-_LINEAR_TEMPLATE = '''
+# Ensure statsmodels is importable. The custom E2B image (Phase C) preinstalls it,
+# so this is a no-op there; before that image is published this self-heals once
+# per sandbox (the handle is reused for the session, so the cost is paid once).
+_ENSURE_STATSMODELS = '''
+try:
+    import statsmodels.api as _sm_probe
+except Exception:
+    import subprocess, sys
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "statsmodels"], check=False)
+'''
+
+_LINEAR_TEMPLATE = _ENSURE_STATSMODELS + '''
 import pandas as pd, numpy as np
 import statsmodels.api as sm
 from statsmodels.stats.outliers_influence import variance_inflation_factor
@@ -128,7 +139,7 @@ except Exception:
     pass
 '''
 
-_LOGISTIC_TEMPLATE = '''
+_LOGISTIC_TEMPLATE = _ENSURE_STATSMODELS + '''
 import pandas as pd, numpy as np
 import statsmodels.api as sm
 from statsmodels.stats.outliers_influence import variance_inflation_factor

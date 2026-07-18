@@ -342,11 +342,11 @@ async def _regression(message, session, context, profile, mode) -> dict[str, Any
     stdout = exec_result.get("stdout", "")
     if not exec_result.get("success") or "=== MODEL ===" not in stdout:
         stderr = exec_result.get("stderr", "") or ""
-        if "statsmodels" in stderr:
+        if "statsmodels" in stderr or "No module named" in stderr:
             return _text_result(
-                "Verified regression needs the statsmodels library, which isn't installed in the "
-                "analysis sandbox yet — that's a deployment step. The model is set up correctly; it "
-                "just can't run here until the sandbox image includes statsmodels."
+                "I couldn't load the regression library (statsmodels) in the analysis sandbox. "
+                "The model is set up correctly — retry in a moment, or the sandbox may lack network "
+                "access to install it (the deployed image should include it)."
             )
         detail = _first_error_line(stderr)
         return _text_result(f"I couldn't fit that regression{(' (' + detail + ')') if detail else ''}. Check the columns have enough complete rows.")
