@@ -340,7 +340,10 @@ async def _regression(message, session, context, profile, mode) -> dict[str, Any
     sbx = await get_or_create_sandbox(str(session.id))
     exec_result = await execute_code(sbx, code)
     stdout = exec_result.get("stdout", "")
-    if not exec_result.get("success") or "=== MODEL ===" not in stdout:
+    # Judge success by the deterministic output marker, not the executor's success
+    # flag: statsmodels warnings / the first-run pip install can write harmless
+    # stderr, but if the model block printed, the regression genuinely ran.
+    if "=== MODEL ===" not in stdout:
         stderr = exec_result.get("stderr", "") or ""
         if "statsmodels" in stderr or "No module named" in stderr:
             return _text_result(

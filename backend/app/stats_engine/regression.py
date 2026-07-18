@@ -77,7 +77,9 @@ try:
     import statsmodels.api as _sm_probe
 except Exception:
     import subprocess, sys
-    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "statsmodels"], check=False)
+    # capture_output so pip's "[notice]" chatter doesn't leak to stderr (which the
+    # executor would otherwise treat as a failed run).
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "statsmodels"], check=False, capture_output=True)
 '''
 
 _LINEAR_TEMPLATE = _ENSURE_STATSMODELS + '''
