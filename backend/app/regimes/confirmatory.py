@@ -2,8 +2,11 @@ import re
 from typing import Any, Optional
 from app.db.models import Session, Message
 from app.llm.fireworks_client import call_main_model, call_structured_output
-from app.llm.prompts import NARRATION_SYSTEM_PROMPT, repair_prompt, ASSISTED_TEST_SYSTEM_PROMPT
-from app.llm.schemas import ConfirmatoryNarration
+from app.llm.prompts import (
+    NARRATION_SYSTEM_PROMPT, repair_prompt, ASSISTED_TEST_SYSTEM_PROMPT,
+    REGRESSION_EXTRACTION_SYSTEM_PROMPT, REGRESSION_NARRATION_SYSTEM_PROMPT,
+)
+from app.llm.schemas import ConfirmatoryNarration, RegressionSpec
 from app.sandbox.manager import get_or_create_sandbox
 from app.sandbox.executor import execute_code
 from app.sandbox.repair import attempt_repair
@@ -12,6 +15,7 @@ from app.stats_engine.test_selector import (
     is_multivariate_request, get_multivariate_fallback_message, explain_test_choice,
 )
 from app.stats_engine.registry import get_test, render_template
+from app.stats_engine.regression import resolve_model, render_regression
 from app.stats_engine.assumption_checks import run_live_checks, PASS, FAIL, NOT_APPLICABLE
 from app.profiling.cache import get_cached_profile
 from app.db.artifacts import find_similar_artifact
@@ -44,9 +48,10 @@ async def handle(message: str, session: Session, context: dict[str, Any], recent
     if not profile:
         return _text_result("I need your dataset profile first. Try again in a moment.")
 
-    if is_multivariate_request(message):
-        variables = _extract_variables(message, profile)
-        return _text_result(get_multivariate_fallback_message(variables))
+    # Regression / multivariable modelling → the verified regression path
+    # (replaces the old "multivariate not supported" fallback).
+    if _is_regression_request(message):
+        return await _regression(message, session, context, profile, mode)
 
     variables = _extract_variables(message, profile)
     if len(variables) < 2:
@@ -273,6 +278,142 @@ async def _assisted_run(message, session, context, variables, why) -> dict[str, 
         "suggested_next": None, "next_action": None, "nudge_style": "soft",
         "engine_verified": False, "test_display_name": "LLM-assisted analysis",
         "is_hypothesis_candidate": False, "metered": True,
+    }
+
+
+# ── Verified regression (Goal 1) ──────────────────────────────────────────────
+
+_REGRESSION_RE = re.compile(
+    r"\b(regression|regress|\bpredict\b|\bmodel\b[^.?!]{0,40}\b(on|from|using|by)\b|"
+    r"controlling for|adjusting for|multivariable|multivariate|covariat)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_regression_request(message: str) -> bool:
+    return bool(_REGRESSION_RE.search(message))
+
+
+async def _extract_regression_spec(message: str, columns: list[str]) -> RegressionSpec:
+    col_list = ", ".join(columns)
+    return await call_structured_output(
+        messages=[{"role": "user", "content": f"Columns: {col_list}\n\nRequest: {message}"}],
+        system_prompt=REGRESSION_EXTRACTION_SYSTEM_PROMPT, schema_class=RegressionSpec, temperature=0.0,
+    )
+
+
+def _match_column(name: str, columns: list[str]) -> Optional[str]:
+    if not name:
+        return None
+    low = name.strip().lower()
+    for c in columns:                       # exact (case-insensitive)
+        if c.lower() == low:
+            return c
+    for c in columns:                       # substring
+        if low in c.lower() or c.lower() in low:
+            return c
+    return None
+
+
+async def _regression(message, session, context, profile, mode) -> dict[str, Any]:
+    columns = list(profile.get("columns", {}).keys())
+    spec = await _extract_regression_spec(message, columns)
+    if not spec.is_regression or not spec.outcome:
+        return _text_result(
+            "Tell me which variable to predict (the outcome) and which predictors to use — "
+            "e.g. \"predict exam_score from hours_studied and cohort\"."
+        )
+
+    outcome = _match_column(spec.outcome, columns)
+    predictors = [m for m in (_match_column(p, columns) for p in spec.predictors) if m]
+    predictors = list(dict.fromkeys(predictors))
+    if not outcome:
+        return _text_result(f"I couldn't match the outcome '{spec.outcome}' to a column. Available: {', '.join(columns[:12])}")
+    if not predictors:
+        return _text_result(f"I need at least one predictor column for the regression. Available: {', '.join(columns[:12])}")
+
+    resolved = resolve_model(outcome, predictors, profile)
+    if not resolved.get("ok"):
+        return _text_result(resolved.get("reason", "I couldn't set up that regression."))
+
+    code = render_regression(resolved["model_type"], resolved["outcome"], resolved["predictors"], resolved["categoricals"])
+    sbx = await get_or_create_sandbox(str(session.id))
+    exec_result = await execute_code(sbx, code)
+    stdout = exec_result.get("stdout", "")
+    if not exec_result.get("success") or "=== MODEL ===" not in stdout:
+        stderr = exec_result.get("stderr", "") or ""
+        if "statsmodels" in stderr:
+            return _text_result(
+                "Verified regression needs the statsmodels library, which isn't installed in the "
+                "analysis sandbox yet — that's a deployment step. The model is set up correctly; it "
+                "just can't run here until the sandbox image includes statsmodels."
+            )
+        detail = _first_error_line(stderr)
+        return _text_result(f"I couldn't fit that regression{(' (' + detail + ')') if detail else ''}. Check the columns have enough complete rows.")
+
+    content = _parse_regression_output(stdout, resolved)
+    narration = await call_structured_output(
+        messages=[{"role": "user", "content": f"Model output:\n{stdout}\n\nInterpret it."}],
+        system_prompt=REGRESSION_NARRATION_SYSTEM_PROMPT, schema_class=ConfirmatoryNarration, temperature=0.1,
+    )
+    display = content["display_name"]
+    response_text = narration.plain_language_result
+    if narration.suspect_result and narration.suspect_reason:
+        response_text += f"\n\n⚠️ Note: {narration.suspect_reason}"
+
+    if mode == "guided":
+        nudge_style, suggested_next = "directive", "Next step: interpret these coefficients and add the model to your report."
+        next_action = {"label": "Interpret & continue", "query": f"Interpret the regression of {resolved['outcome']}"}
+    else:
+        nudge_style, suggested_next, next_action = "soft", "Want to check the model's assumptions or try different predictors?", None
+
+    return {
+        "text": response_text, "images": [], "artifact_content": content,
+        "artifact_type": "test_result", "stage": "inferential",
+        "variables_involved": [resolved["outcome"]] + resolved["predictors"],
+        "code_used": code, "executions": [{"code": code, "output": stdout.rstrip() or "(no output)"}],
+        "suggested_next": suggested_next, "next_action": next_action, "nudge_style": nudge_style,
+        "engine_verified": True, "test_display_name": display,
+        "is_hypothesis_candidate": False, "metered": True,
+    }
+
+
+def _parse_regression_output(stdout: str, resolved: dict[str, Any]) -> dict[str, Any]:
+    def f(label):
+        m = re.search(rf"{re.escape(label)}[:\s]+([\-0-9.eE]+)", stdout)
+        try:
+            return float(m.group(1)) if m else None
+        except ValueError:
+            return None
+
+    coefficients = []
+    for m in re.finditer(r"^(.+?): coef=([\-0-9.eE]+), se=([\-0-9.eE]+), [tz]=([\-0-9.eE]+), p=([\-0-9.eE]+)(?:, or=([\-0-9.eE]+))?, ci=\[([\-0-9.eE]+), ([\-0-9.eE]+)\]", stdout, re.MULTILINE):
+        coefficients.append({
+            "name": m.group(1), "coef": float(m.group(2)), "se": float(m.group(3)),
+            "statistic": float(m.group(4)), "p_value": float(m.group(5)),
+            "odds_ratio": float(m.group(6)) if m.group(6) else None,
+            "ci_low": float(m.group(7)), "ci_high": float(m.group(8)),
+        })
+    diagnostics = {
+        "vif": {vm.group(1): float(vm.group(2)) for vm in re.finditer(r"VIF (.+?): ([\-0-9.eE]+)", stdout)},
+        "breusch_pagan_p": f("Breusch-Pagan p (homoscedasticity)"),
+        "durbin_watson": f("Durbin-Watson (independence)"),
+        "residual_normality_p": f("Residual normality p"),
+    }
+    model_type = resolved["model_type"]
+    display = "Logistic Regression" if model_type == "logistic" else "Linear Regression"
+    p_value = f("LLR P-value") if model_type == "logistic" else f("P-value")
+    return {
+        "test_name": f"{model_type}_regression", "display_name": display,
+        "model_type": model_type, "outcome": resolved["outcome"], "predictors": resolved["predictors"],
+        "n": int(f("N")) if f("N") is not None else None,
+        "r_squared": f("Pseudo R-squared") if model_type == "logistic" else f("R-squared"),
+        "adj_r_squared": f("Adjusted R-squared"),
+        "p_value": p_value, "statistic": None,
+        "coefficients": coefficients, "diagnostics": diagnostics,
+        "reasoning": f"{display} of '{resolved['outcome']}' on {', '.join(resolved['predictors'])}.",
+        "assumption_results": {}, "interpretation": "", "raw_output": stdout,
+        "engine_verified": True, "alpha": 0.05,
     }
 
 

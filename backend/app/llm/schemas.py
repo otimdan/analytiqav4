@@ -25,6 +25,15 @@ class ConfirmatoryNarration(BaseModel):
     suspect_reason: Optional[str] = None
 
 
+class RegressionSpec(BaseModel):
+    """LLM extraction of a modelling request into columns. The engine validates
+    these against the real dataset and runs the audited template — the LLM only
+    identifies which column is the outcome and which are predictors."""
+    is_regression: bool
+    outcome: Optional[str] = None
+    predictors: list[str] = Field(default_factory=list)
+
+
 class OrientationRecap(BaseModel):
     what_has_been_done: list[str]
     suggested_next: str

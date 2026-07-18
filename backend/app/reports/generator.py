@@ -89,6 +89,8 @@ def _build_artifact_section(artifact: Artifact) -> str:
 
 
 def _format_test_result(content, var_str):
+    if content.get("coefficients"):
+        return _format_regression(content)
     test_name = content.get("display_name", "Statistical Test")
     p_value = content.get("p_value")
     statistic = content.get("statistic")
@@ -117,6 +119,53 @@ def _format_test_result(content, var_str):
     suspect = content.get("suspect_result", False)
     suspect_reason = content.get("suspect_reason", "")
     if suspect and suspect_reason: lines.append(f"\n> ⚠️ Note: {suspect_reason}")
+    return "\n".join(lines)
+
+
+def _format_regression(content):
+    display = content.get("display_name", "Regression")
+    outcome = content.get("outcome", "")
+    is_logistic = content.get("model_type") == "logistic"
+    lines = [f"### {display}", f"**Outcome:** `{outcome}`"]
+    if not content.get("engine_verified", True):
+        lines.append("> ⚠️ Not from the verified library.")
+    n = content.get("n")
+    r2 = content.get("r_squared")
+    p = content.get("p_value")
+    fit = []
+    if n is not None: fit.append(f"N = {n}")
+    if r2 is not None: fit.append(f"{'Pseudo R²' if is_logistic else 'R²'} = {r2:.3f}")
+    if p is not None: fit.append(f"model p = {p:.4f}")
+    if fit: lines.append("**Fit:** " + ", ".join(fit))
+    lines.append("")
+    # Coefficient table
+    if is_logistic:
+        lines.append("| Predictor | Coef | Odds ratio | p |")
+        lines.append("|-----------|------|-----------|---|")
+        for c in content["coefficients"]:
+            orv = c.get("odds_ratio")
+            lines.append(f"| {c['name']} | {c['coef']:.3f} | {orv:.3f} | {c['p_value']:.4f} |" if orv is not None else f"| {c['name']} | {c['coef']:.3f} | — | {c['p_value']:.4f} |")
+    else:
+        lines.append("| Predictor | Coef | 95% CI | p |")
+        lines.append("|-----------|------|--------|---|")
+        for c in content["coefficients"]:
+            lines.append(f"| {c['name']} | {c['coef']:.3f} | [{c['ci_low']:.3f}, {c['ci_high']:.3f}] | {c['p_value']:.4f} |")
+    # Diagnostics
+    diag = content.get("diagnostics", {})
+    notes = []
+    vif = diag.get("vif", {})
+    high_vif = [f"{k} ({v:.1f})" for k, v in vif.items() if v and v > 5]
+    if high_vif: notes.append(f"High multicollinearity (VIF>5): {', '.join(high_vif)}")
+    bp = diag.get("breusch_pagan_p")
+    if bp is not None and bp < 0.05: notes.append(f"Heteroscedasticity indicated (Breusch-Pagan p={bp:.3f})")
+    rn = diag.get("residual_normality_p")
+    if rn is not None and rn < 0.05: notes.append(f"Non-normal residuals (p={rn:.3f})")
+    if notes:
+        lines.append("")
+        lines.append("**Diagnostic flags:** " + "; ".join(notes))
+    interp = content.get("interpretation")
+    if interp:
+        lines.append(f"\n**Interpretation:**\n{interp}")
     return "\n".join(lines)
 
 

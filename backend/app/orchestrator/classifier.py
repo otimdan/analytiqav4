@@ -21,6 +21,10 @@ _RULE_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\brun (a|an|the)\b[^.?!]{0,40}\btests?\b", re.IGNORECASE), "confirmatory"),
     (re.compile(r"\b(test|check)\b[^.?!]{0,15}\b(whether|if|for)\b[^.?!]{0,60}\b(significan|differ|associat|relationship|correlat|effect|impact)", re.IGNORECASE), "confirmatory"),
     (re.compile(r"\b(is|are|was|were|it'?s)\b[^.?!]{0,40}\b(statistically )?significan", re.IGNORECASE), "confirmatory"),
+    # Regression / multivariable modelling → verified regression (in confirmatory).
+    (re.compile(r"\b(linear|logistic|multiple|multivariable|multivariate) regression\b", re.IGNORECASE), "confirmatory"),
+    (re.compile(r"\b(regress|predict|model)\b[^.?!]{0,60}\b(on|from|using|against|by|controlling for|adjusting for)\b", re.IGNORECASE), "confirmatory"),
+    (re.compile(r"\b(controlling|adjusting) for\b", re.IGNORECASE), "confirmatory"),
     (re.compile(r"^(thanks?|thank you|ok(ay)?|great|nice|perfect|i like (that|it)|good|cool|awesome|sawa|webale|asante|nzuri|poa)[!.]?\s*$", re.IGNORECASE), "meta"),
     (re.compile(r"\b(you'?re wrong|that'?s (not right|incorrect|wrong)|i (don'?t|do not) (think|believe) (that'?s|this is) (right|correct)|that doesn'?t (seem|look|sound) right|are you sure|i disagree)\b", re.IGNORECASE), "meta"),
 ]

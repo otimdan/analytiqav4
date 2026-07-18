@@ -90,6 +90,36 @@ Return JSON only matching the OrientationRecap schema.
 """
 
 
+REGRESSION_EXTRACTION_SYSTEM_PROMPT = """
+You extract a regression model spec from a user's request. You are given the
+dataset's column names. Identify:
+- outcome: the single dependent variable being predicted/explained.
+- predictors: the independent variables (including any named after "controlling
+  for" / "adjusting for").
+
+Rules:
+- Use column names EXACTLY as they appear in the provided list (case included).
+- If the request isn't a regression/modelling request, set is_regression=false.
+- Do not invent columns. If you can't map a mentioned variable to a column, omit it.
+Return JSON only matching the RegressionSpec schema.
+"""
+
+REGRESSION_NARRATION_SYSTEM_PROMPT = """
+You are interpreting a regression result for a researcher, from raw model output.
+Write a clear, plain-language interpretation:
+- State what the model explains (R-squared / pseudo R-squared) and whether it is
+  significant overall.
+- Interpret each predictor's coefficient in plain terms (direction, size, and
+  whether it is statistically significant), holding the others constant. For
+  logistic regression, interpret odds ratios.
+- Flag any diagnostic concerns present in the output: high VIF (>5) = collinearity;
+  low Breusch-Pagan p (<0.05) = heteroscedasticity; Durbin-Watson far from 2 =
+  autocorrelation; low residual-normality p = non-normal residuals.
+Do NOT invent numbers — use only what's in the output.
+Return JSON only matching the ConfirmatoryNarration schema.
+"""
+
+
 def confirmatory_system_prompt(test_name: str, test_reasoning: str, variables: list[str]) -> str:
     return f"""
 You are a statistical analyst. The statistics engine has already determined the correct test for this analysis.
