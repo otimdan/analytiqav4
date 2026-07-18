@@ -6,10 +6,12 @@ from app.db.supabase_client import get_client
 from app.db.models import Session
 
 
-def create_session(dataset_filename: str, dataset_csv: str, user_id: Optional[str] = None) -> Session:
+def create_session(dataset_filename: str, dataset_csv: str, user_id: Optional[str] = None, mode: str = "explore") -> Session:
     client = get_client()
     now = datetime.now(timezone.utc)
     session_id = str(uuid4())
+    # Mode is fixed at creation and never updated afterward (immutable per task).
+    safe_mode = mode if mode in ("explore", "guided") else "explore"
     row = {
         "id": session_id,
         "user_id": user_id,
@@ -27,14 +29,23 @@ def create_session(dataset_filename: str, dataset_csv: str, user_id: Optional[st
         "feedback_count": 0,
     }
     result = client.table("sessions").insert(row).execute()
-    # Best-effort title (sidebar label). Separate update so a missing `title`
-    # column (before migration 005) can't break dataset upload.
+    session_row = result.data[0]
+    # Best-effort title + mode. Separate updates so a missing column (before
+    # migrations 005/006) can't break dataset upload — the task just degrades to
+    # an untitled 'explore' task instead of failing.
+    updates: dict[str, Any] = {}
     if dataset_filename:
+        updates["title"] = dataset_filename
+    updates["mode"] = safe_mode
+    try:
+        client.table("sessions").update(updates).eq("id", session_id).execute()
+        session_row = {**session_row, **updates}
+    except Exception:
         try:
             client.table("sessions").update({"title": dataset_filename}).eq("id", session_id).execute()
         except Exception:
             pass
-    return Session(**result.data[0])
+    return Session(**session_row)
 
 
 def get_session(session_id: str) -> Optional[Session]:
@@ -118,6 +129,10 @@ def get_sessions_for_user(user_id: str) -> list[dict[str, Any]]:
     # Lightweight list for the sidebar — deliberately omits dataset_csv (large).
     # dataset_ready lets the UI distinguish resumable tasks from wiped ones.
     client = get_client()
+    # NOTE: do NOT list `mode` in an explicit PostgREST select — `mode` is a
+    # Postgres ordered-set aggregate, so a bare `mode` token is parsed as the
+    # aggregate function and the request 400s. The sidebar doesn't need per-task
+    # mode anyway (the active task's mode comes from /state, which uses select=*).
     result = (
         client.table("sessions")
         .select("id, title, dataset_filename, created_at, last_active_at, dataset_csv")

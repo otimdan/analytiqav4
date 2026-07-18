@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from pydantic import BaseModel
 from app.db.models import Session, UploadResponse, SessionStateResponse
 from app.db.sessions import (
@@ -20,11 +20,18 @@ router = APIRouter(prefix="/session", tags=["session"])
 
 
 @router.post("/upload", response_model=UploadResponse)
-async def upload_dataset(file: UploadFile = File(...), user: AuthUser = Depends(get_current_user)) -> UploadResponse:
+async def upload_dataset(
+    file: UploadFile = File(...),
+    mode: str = Form("explore"),
+    user: AuthUser = Depends(get_current_user),
+) -> UploadResponse:
     if not upload_limiter.allow(user.id):
         raise HTTPException(status_code=429, detail="Too many uploads in a short time. Please wait a moment.")
     if not file.filename or not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are accepted.")
+    # Task mode is chosen up front (mode picker) and fixed at creation.
+    if mode not in ("explore", "guided"):
+        mode = "explore"
 
     content = await file.read()
     try:
@@ -39,7 +46,7 @@ async def upload_dataset(file: UploadFile = File(...), user: AuthUser = Depends(
     if len(lines) < 2:
         raise HTTPException(status_code=400, detail="The file appears to be empty or has only headers.")
 
-    session = await run_db(db_create_session, dataset_filename=file.filename, dataset_csv=csv_text, user_id=user.id)
+    session = await run_db(db_create_session, dataset_filename=file.filename, dataset_csv=csv_text, user_id=user.id, mode=mode)
     sbx = await get_or_create_sandbox(str(session.id))
 
     try:
@@ -114,8 +121,7 @@ async def get_session_state(session_id: str, user: AuthUser = Depends(get_curren
 
     return SessionStateResponse(
         session_id=session_id,
-        hypothesis_on_record=session.hypothesis_on_record,
-        suggestion_mode=session.suggestion_mode,
+        mode=getattr(session, "mode", "explore"),
         hypothesis_text=session.hypothesis_text,
         dataset_filename=session.dataset_filename,
         profile_summary=profile_summary,

@@ -1,6 +1,6 @@
 "use client"
 import { useState, useEffect, useCallback } from "react"
-import type { SessionState, UploadResponse } from "@/lib/types"
+import type { SessionState, UploadResponse, TaskMode } from "@/lib/types"
 import { uploadDataset, getSessionState, closeSession, resetConversation } from "@/lib/api"
 
 const SESSION_STORAGE_KEY = "analytika_session_id"
@@ -10,7 +10,7 @@ export interface UseSessionReturn {
   sessionState: SessionState | null
   loading: boolean
   error: string | null
-  upload: (file: File) => Promise<UploadResponse | null>
+  upload: (file: File, mode: TaskMode) => Promise<UploadResponse | null>
   select: (sessionId: string) => Promise<void>
   refresh: () => Promise<void>
   reset: () => Promise<void>
@@ -58,17 +58,16 @@ export function useSession(): UseSessionReturn {
     }
   }
 
-  const upload = useCallback(async (file: File): Promise<UploadResponse | null> => {
+  const upload = useCallback(async (file: File, mode: TaskMode): Promise<UploadResponse | null> => {
     setLoading(true)
     setError(null)
     try {
-      const result = await uploadDataset(file)
+      const result = await uploadDataset(file, mode)
       setSessionId(result.session_id)
       localStorage.setItem(SESSION_STORAGE_KEY, result.session_id)
       setSessionState({
         session_id: result.session_id,
-        hypothesis_on_record: false,
-        suggestion_mode: false,
+        mode,
         hypothesis_text: null,
         dataset_filename: result.filename,
         profile_summary: result.profile_summary,

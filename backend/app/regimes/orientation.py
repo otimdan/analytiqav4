@@ -49,4 +49,6 @@ async def handle(session: Session, context: dict[str, Any]) -> dict[str, Any]:
     if recap.next_step_query:
         next_action = {"label": "Run it", "query": recap.next_step_query}
 
-    return {"text": response_text, "images": [], "artifact_content": None, "artifact_type": None, "stage": None, "variables_involved": None, "code_used": None, "suggested_next": recap.suggested_next, "next_action": next_action, "is_hypothesis_candidate": recap.is_hypothesis_candidate}
+    nudge_style = "directive" if context.get("mode") == "guided" else "soft"
+
+    return {"text": response_text, "images": [], "artifact_content": None, "artifact_type": None, "stage": None, "variables_involved": None, "code_used": None, "suggested_next": recap.suggested_next, "next_action": next_action, "nudge_style": nudge_style, "is_hypothesis_candidate": recap.is_hypothesis_candidate}

@@ -1,12 +1,12 @@
 "use client"
 import { useState, useEffect, useRef } from "react"
-import type { ArtifactStage, GuidanceState, TaskSummary } from "@/lib/types"
+import type { GuidanceState, GuidedStageKey, TaskSummary } from "@/lib/types"
 import { StepRail } from "@/components/progress/StepRail"
 import { AccountMenu } from "@/components/auth/AccountMenu"
 
 interface SidebarProps {
   guidance: GuidanceState
-  completedStages: Set<ArtifactStage>
+  guidedProgress: Set<GuidedStageKey>
   tasks: TaskSummary[]
   activeTaskId: string | null
   onNewTask: () => void
@@ -16,9 +16,9 @@ interface SidebarProps {
 }
 
 // Left navigation rail, Julius-style: brand, New Task, the user's saved tasks
-// (recents), the guided-analysis step rail (only while a hypothesis is tracked),
-// and the account avatar pinned to the footer.
-export function Sidebar({ guidance, completedStages, tasks, activeTaskId, onNewTask, onSelectTask, onDeleteTask, onRenameTask }: SidebarProps) {
+// (recents), the guided-analysis step rail (only in guided-mode tasks), and the
+// account avatar pinned to the footer.
+export function Sidebar({ guidance, guidedProgress, tasks, activeTaskId, onNewTask, onSelectTask, onDeleteTask, onRenameTask }: SidebarProps) {
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-gray-100 bg-gray-50/60">
       <div className="flex items-center px-4 py-4">
@@ -54,9 +54,9 @@ export function Sidebar({ guidance, completedStages, tasks, activeTaskId, onNewT
           </ul>
         )}
 
-        {guidance.hypothesis_on_record && (
+        {guidance.is_guided && (
           <div className="mt-6">
-            <StepRail completedStages={completedStages} hypothesisText={guidance.hypothesis_text} />
+            <StepRail doneKeys={guidedProgress} hypothesisText={guidance.hypothesis_text} />
           </div>
         )}
       </nav>

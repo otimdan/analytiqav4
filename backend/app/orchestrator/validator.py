@@ -27,7 +27,7 @@ class ValidationResult:
         self.had_thinking_leak = had_thinking_leak
 
 
-def validate_output(regime: str, response_text: str, artifact_content: dict[str, Any] | None = None, has_images: bool = False) -> ValidationResult:
+def validate_output(regime: str, response_text: str, artifact_content: dict[str, Any] | None = None, has_images: bool = False, artifact_type: str | None = None) -> ValidationResult:
     requirements = _REGIME_REQUIREMENTS.get(regime, _REGIME_REQUIREMENTS["exploratory"])
     cleaned, had_leak = _strip_thinking_leaks(response_text)
     is_effectively_empty = not cleaned.strip() and not has_images and not artifact_content
@@ -35,8 +35,10 @@ def validate_output(regime: str, response_text: str, artifact_content: dict[str,
     if requirements["forbidden_empty"] and is_effectively_empty:
         return ValidationResult(False, "", f"Regime '{regime}' produced empty output with no images or artifacts.", had_leak)
 
+    # Test-result required-fields only apply to an actual test result. A guided
+    # assumption-check pause is confirmatory-regime but has no p_value yet.
     required_fields = requirements.get("required_fields", [])
-    if required_fields and artifact_content:
+    if required_fields and artifact_content and artifact_type == "test_result":
         missing = [f for f in required_fields if f not in artifact_content]
         if missing:
             return ValidationResult(False, cleaned, f"Confirmatory output missing required fields: {', '.join(missing)}", had_leak)

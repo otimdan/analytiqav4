@@ -21,11 +21,35 @@ def classify_variable(column_name: str, profile: dict[str, Any]) -> str:
     uniqueness = col.get("uniqueness_ratio", 0)
     likely_categorical = col.get("likely_categorical", False)
     likely_datetime = col.get("likely_datetime", False)
+    is_float = "float" in dtype
+    is_int = "int" in dtype
+    is_numeric = is_float or is_int
 
-    if semantic == "identifier" or uniqueness > 0.95:
-        return IDENTIFIER
-    if likely_datetime or semantic == "datetime":
+    # Datetime only when the values ACTUALLY parse as dates — never from a name
+    # guess alone (a text column called "session_time" holding 'morning'/'evening'
+    # is categorical, not datetime).
+    if likely_datetime:
         return DATETIME
+
+    # Continuous float measurements are numeric, full stop. High uniqueness is
+    # the NORM for continuous data, so it must never mark a float as an
+    # identifier (that used to reject columns like exam_score / weight outright).
+    if is_float:
+        return NUMERIC_OR_ORDINAL if semantic == "ordinal_scale" else NUMERIC
+
+    # Integers flagged categorical by the profiler (few distinct values) win
+    # before the id/numeric split.
+    if is_int and likely_categorical:
+        return CATEGORICAL
+
+    # Identifiers: an explicit name-based guess, or an all-unique NON-numeric
+    # column (unique strings = names/emails/codes). A high-uniqueness *numeric*
+    # column is continuous data, not an id, unless its name said so.
+    if semantic == "identifier":
+        return IDENTIFIER
+    if uniqueness > 0.95 and not is_numeric:
+        return IDENTIFIER
+
     if semantic == "free_text":
         return FREE_TEXT
     if likely_categorical:
@@ -34,7 +58,7 @@ def classify_variable(column_name: str, profile: dict[str, Any]) -> str:
         return NUMERIC_OR_ORDINAL
     if "object" in dtype or "category" in dtype or semantic == "categorical_grouping":
         return CATEGORICAL
-    if any(t in dtype for t in ["int", "float"]):
+    if is_numeric:
         return NUMERIC
 
     return UNKNOWN

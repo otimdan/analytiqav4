@@ -2,10 +2,14 @@
 import { useMemo } from "react"
 import type { SessionState, GuidanceState } from "@/lib/types"
 
+// Guidance state now derives from the explicit task mode, not the old inferred
+// booleans. The step rail shows iff the task is guided; the project header shows
+// whatever research question has been captured.
 export function useGuidance(sessionState: SessionState | null): GuidanceState {
+  const mode = sessionState?.mode ?? "explore"
   return useMemo(() => ({
-    hypothesis_on_record: sessionState?.hypothesis_on_record ?? false,
-    suggestion_mode: sessionState?.suggestion_mode ?? false,
+    mode,
+    is_guided: mode === "guided",
     hypothesis_text: sessionState?.hypothesis_text ?? null,
-  }), [sessionState?.hypothesis_on_record, sessionState?.suggestion_mode, sessionState?.hypothesis_text])
+  }), [mode, sessionState?.hypothesis_text])
 }

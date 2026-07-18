@@ -27,6 +27,13 @@ async def handle(message: str, session: Session, context: dict[str, Any], recent
     sbx = await get_or_create_sandbox(str(session.id))
     context_block = format_context_for_prompt(context)
 
+    # Real column names, matched against the message directly. (The profile
+    # summary text has no backticks, so parsing backticks out of it found
+    # nothing — which left chart artifacts with no variables_involved and broke
+    # the "plot X vs Y" -> "is that significant?" context carry.)
+    profile = await run_db(get_cached_profile, str(session.id))
+    col_names = list((profile or {}).get("columns", {}).keys())
+
     # Deliberate "plot X vs Y" flow: when the user explicitly asks for a chart,
     # pick an appropriate chart type from the mentioned columns' types and steer
     # the model toward it, so visualizations are reliable and well-formed rather
@@ -34,9 +41,8 @@ async def handle(message: str, session: Session, context: dict[str, Any], recent
     chart_rec = None
     plot_directive = ""
     if _is_plot_request(message):
-        profile = await run_db(get_cached_profile, str(session.id))
         if profile:
-            mentioned = _extract_mentioned_columns(message, context.get("profile_summary", ""))
+            mentioned = _extract_mentioned_columns(message, col_names)
             chart_rec = recommend_chart(mentioned, profile)
         if chart_rec:
             plot_directive = f"\n\nThe user wants a visualization. {chart_rec.directive} You MUST produce this chart."
@@ -94,7 +100,7 @@ async def handle(message: str, session: Session, context: dict[str, Any], recent
 
     code_used = "\n\n".join(all_code_blocks) if all_code_blocks else None
     stage = "visualisation" if all_images else "descriptive"
-    variables = _extract_mentioned_columns(message, context.get("profile_summary", ""))
+    variables = _extract_mentioned_columns(message, col_names)
 
     chart_type = chart_rec.chart_type if chart_rec else _infer_chart_type(all_code_blocks)
     chart_caption = chart_rec.rationale if chart_rec else None
@@ -112,12 +118,30 @@ async def handle(message: str, session: Session, context: dict[str, Any], recent
 
     suggested_next = None
     next_action = None
-    if context.get("suggestion_mode") and all_images:
-        suggested_next = "Want to test whether that pattern is statistically significant?"
-        if len(variables) >= 2:
-            next_action = {"label": "Run the test", "query": f"Run a statistical test on {variables[0]} and {variables[1]}"}
+    nudge_style = "soft"
+    # Nudges are always eligible now; mode decides the tone. After a chart with
+    # two variables, point toward a formal test — directively in guided mode,
+    # softly in explore.
+    if all_images and len(variables) >= 2:
+        next_action = {"label": "Run the test", "query": f"Run a statistical test on {variables[0]} and {variables[1]}"}
+        if context.get("mode") == "guided":
+            nudge_style = "directive"
+            suggested_next = "Next step: run a statistical test to confirm this pattern."
+        else:
+            suggested_next = "Want to test whether that pattern is statistically significant?"
 
-    return {"text": final_text, "images": all_images, "artifact_content": artifact_content, "artifact_type": artifact_type, "stage": stage, "variables_involved": variables, "code_used": code_used, "executions": executions, "chart_caption": chart_caption, "suggested_next": suggested_next, "next_action": next_action, "is_hypothesis_candidate": False}
+    # If the free-form path did an inferential analysis (regression/modelling),
+    # it's outside the verified test library — badge it honestly so a regression
+    # result doesn't read like a verified test. append the caveat to the text.
+    verification = None
+    if _is_inferential_request(message):
+        verification = "Exploratory model (not verified)"
+        final_text += (
+            "\n\n> ⚠️ This is an **exploratory analysis**, not from the verified test library — "
+            "the assistant wrote it directly, so treat the result with more caution."
+        )
+
+    return {"text": final_text, "images": all_images, "artifact_content": artifact_content, "artifact_type": artifact_type, "stage": stage, "variables_involved": variables, "code_used": code_used, "executions": executions, "chart_caption": chart_caption, "suggested_next": suggested_next, "next_action": next_action, "nudge_style": nudge_style, "engine_verified": False if verification else None, "test_display_name": verification, "is_hypothesis_candidate": False}
 
 
 def _format_execution_output(exec_result: dict) -> str:
@@ -164,6 +188,18 @@ def _infer_chart_type(code_blocks):
     return "chart"
 
 
-def _extract_mentioned_columns(message, profile_summary):
-    columns = re.findall(r"`([^`]+)`", profile_summary)
-    return [col for col in columns if col.lower() in message.lower()] or []
+def _extract_mentioned_columns(message, columns):
+    # Match real column names against the message (same approach as the
+    # confirmatory handler), case-insensitively.
+    return [col for col in columns if col.lower() in message.lower()]
+
+
+_INFERENTIAL_RE = re.compile(
+    r"\b(regression|regress|predict|predictor|coefficient|r.?squared|\bols\b|\bglm\b|"
+    r"logistic|multivariate|controlling for|adjust(ing)? for|covariat|model (the|exam|score|outcome))\b",
+    re.IGNORECASE,
+)
+
+
+def _is_inferential_request(message: str) -> bool:
+    return bool(_INFERENTIAL_RE.search(message))

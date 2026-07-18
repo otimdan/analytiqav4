@@ -12,6 +12,15 @@ _RULE_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\b(what is|what are|explain|define|how does|what does .+ mean|tell me about)\b.{0,40}\b(p.value|t.test|anova|chi.square|regression|correlation|standard deviation|mean|median|hypothesis test|confidence interval|effect size|statistical significance|mann.whitney|kruskal|shapiro|normality|variance|null hypothesis)\b", re.IGNORECASE), "pedagogy"),
     (re.compile(r"\b(how many (rows|columns|observations|variables|missing|null)|what columns|what variables|column names|variable names|dataset size|how much missing|missingness|sample size)\b", re.IGNORECASE), "advisory"),
     (re.compile(r"\b(what (should|do) i (do|try|check|look at) next|i don'?t know what to do|i'?m (not sure|stuck|lost|confused) (what|where|how)|help me (do|with|start|proceed|analyse|analyze)|where do i (go|start|begin) (from here|next)|what'?s (the )?next step|suggest(ion)?s? (on )?what|guide me)\b", re.IGNORECASE), "orientation"),
+    # Explicit "run this test" requests must route to confirmatory DETERMINISTICALLY
+    # — not on the LLM classifier's whim (which once sent "Run the statistical
+    # test on X and Y" to exploratory, bypassing the deterministic engine and the
+    # guided run step). These come after pedagogy so "what is a t-test?" still
+    # explains rather than runs.
+    (re.compile(r"\b(run|perform|conduct|carry out|execute|compute|calculate)\b[^.?!]{0,40}\b(t.?tests?|anovas?|mann.?whitney|kruskal|chi.?squared?|wilcoxon|fisher|pearson|spearman|welch|correlations?|statistical tests?|significance tests?|hypothesis tests?|the tests?)\b", re.IGNORECASE), "confirmatory"),
+    (re.compile(r"\brun (a|an|the)\b[^.?!]{0,40}\btests?\b", re.IGNORECASE), "confirmatory"),
+    (re.compile(r"\b(test|check)\b[^.?!]{0,15}\b(whether|if|for)\b[^.?!]{0,60}\b(significan|differ|associat|relationship|correlat|effect|impact)", re.IGNORECASE), "confirmatory"),
+    (re.compile(r"\b(is|are|was|were|it'?s)\b[^.?!]{0,40}\b(statistically )?significan", re.IGNORECASE), "confirmatory"),
     (re.compile(r"^(thanks?|thank you|ok(ay)?|great|nice|perfect|i like (that|it)|good|cool|awesome|sawa|webale|asante|nzuri|poa)[!.]?\s*$", re.IGNORECASE), "meta"),
     (re.compile(r"\b(you'?re wrong|that'?s (not right|incorrect|wrong)|i (don'?t|do not) (think|believe) (that'?s|this is) (right|correct)|that doesn'?t (seem|look|sound) right|are you sure|i disagree)\b", re.IGNORECASE), "meta"),
 ]
@@ -21,7 +30,7 @@ _AMBIGUOUS_PATTERNS: list[re.Pattern] = [
 ]
 
 
-async def classify_intent(message: str, recent_messages: list[Message], has_pending_candidate: bool = False) -> ClassificationResult:
+async def classify_intent(message: str, recent_messages: list[Message], has_pending_candidate: bool = False, mode: str = "explore") -> ClassificationResult:
     if has_pending_candidate:
         stripped = message.strip().lower()
         if stripped in ["yes", "yeah", "yep", "sure", "ok", "okay", "go ahead", "do it", "track it", "yes please"]:
@@ -29,9 +38,18 @@ async def classify_intent(message: str, recent_messages: list[Message], has_pend
         if stripped in ["no", "nope", "don't", "skip", "just answer", "no thanks", "not now"]:
             return ClassificationResult(regime="meta", confidence="rule_based", needs_disambiguation=False, reasoning="Short decline while confirm-gate pending.")
 
-    for pattern in _AMBIGUOUS_PATTERNS:
-        if pattern.search(message):
-            return ClassificationResult(regime="exploratory", confidence="rule_based", needs_disambiguation=True, reasoning="Message matches an ambiguous pattern — surfacing Quick look / Run a test prompt.")
+    # The "Quick look or Run a test?" disambiguation is only meaningful in
+    # explore mode. Guided mode is already committed to formal testing and drives
+    # its own staged flow, so a "is there a difference?" message goes straight to
+    # confirmatory instead of interrupting with a mode question.
+    if mode == "guided":
+        for pattern in _AMBIGUOUS_PATTERNS:
+            if pattern.search(message):
+                return ClassificationResult(regime="confirmatory", confidence="rule_based", needs_disambiguation=False, reasoning="Ambiguous comparison phrasing in guided mode → confirmatory.")
+    else:
+        for pattern in _AMBIGUOUS_PATTERNS:
+            if pattern.search(message):
+                return ClassificationResult(regime="exploratory", confidence="rule_based", needs_disambiguation=True, reasoning="Message matches an ambiguous pattern — surfacing Quick look / Run a test prompt.")
 
     for pattern, regime in _RULE_PATTERNS:
         if pattern.search(message):

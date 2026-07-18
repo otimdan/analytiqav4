@@ -1,7 +1,7 @@
 import re
 from typing import Any
 from app.db.models import Session, Message
-from app.db.sessions import store_hypothesis, update_flags
+from app.db.sessions import store_hypothesis
 from app.db.hypothesis_candidates import create_candidate, get_pending_candidate, accept_candidate, decline_candidate
 from app.db.aio import run_db
 from app.hypothesis.intake import extract_hypothesis, match_variables_to_columns
@@ -17,39 +17,41 @@ def get_first_message(session) -> str:
     return FIRST_AI_MESSAGE.format(rows=rows, columns=cols, filename=session.dataset_filename or "your dataset")
 
 
-async def check_message_for_hypothesis(message: str, session: Session, source_message_id: str, is_first_reply: bool = False) -> dict[str, Any]:
+async def check_message_for_hypothesis(message: str, session: Session, source_message_id: str, is_first_reply: bool = False, mode: str = "explore") -> dict[str, Any]:
+    """Silently record the research question in GUIDED mode; do nothing in EXPLORE.
+
+    With explicit modes, the project is tracked from the start in guided mode
+    (by virtue of the mode itself), so we never ask "track this as a project?".
+    This watcher's only remaining job is to *populate* the research-question text
+    when the guided user states it, so the project header can show it. In explore
+    mode we never track anything. It never interrupts the answer either way.
+    """
+    none = {"action": "none", "hypothesis_text": None}
+
+    # Explore mode never tracks a project.
+    if mode != "guided":
+        return none
+
     profile = await run_db(get_cached_profile, str(session.id))
     if not profile:
-        return {"action": "none", "confirm_prompt": None, "hypothesis_text": None}
+        return none
 
-    if is_first_reply:
-        extraction = await extract_hypothesis(message)
-        if not extraction.is_hypothesis:
-            if _sounds_like_help_request(message):
-                await run_db(update_flags, str(session.id), suggestion_mode=True)
-                return {"action": "suggestion_mode_only", "confirm_prompt": None, "hypothesis_text": None}
-            return {"action": "none", "confirm_prompt": None, "hypothesis_text": None}
-
-        matched, unmatched = match_variables_to_columns(extraction.named_variables, list(profile.get("columns", {}).keys()))
-        if unmatched:
-            await run_db(create_candidate, str(session.id), extraction.research_question or message, source_message_id, matched_columns=matched)
-            confirm_prompt = _build_column_mismatch_prompt(extraction.research_question or message, unmatched, list(profile.get("columns", {}).keys()))
-            return {"action": "candidate_created", "confirm_prompt": confirm_prompt, "hypothesis_text": extraction.research_question}
-
-        await run_db(store_hypothesis, str(session.id), extraction.research_question or message, matched)
-        return {"action": "committed", "confirm_prompt": None, "hypothesis_text": extraction.research_question}
+    # Only capture the question once, on the first reply — don't keep re-writing
+    # it mid-conversation.
+    if not is_first_reply:
+        return none
 
     extraction = await extract_hypothesis(message)
     if not extraction.is_hypothesis:
-        return {"action": "none", "confirm_prompt": None, "hypothesis_text": None}
+        return none
 
-    matched, _ = match_variables_to_columns(extraction.named_variables, list(profile.get("columns", {}).keys()))
-    await run_db(create_candidate, str(session.id), extraction.research_question or message, source_message_id, matched_columns=matched)
-    confirm_prompt = (
-        f"That sounds like a research question — want me to track this as a project and show your progress on the left as you go?\n\n"
-        f"**[Track as project]** · **[No, just answer this]**"
-    )
-    return {"action": "candidate_created", "confirm_prompt": confirm_prompt, "hypothesis_text": extraction.research_question}
+    matched, unmatched = match_variables_to_columns(extraction.named_variables, list(profile.get("columns", {}).keys()))
+    # Record the question when it maps cleanly onto real columns; otherwise leave
+    # the header blank rather than blocking with a clarifying prompt.
+    if matched and not unmatched:
+        await run_db(store_hypothesis, str(session.id), extraction.research_question or message, matched)
+        return {"action": "committed", "hypothesis_text": extraction.research_question}
+    return none
 
 
 async def handle_accept(session_id: str) -> bool:

@@ -84,13 +84,21 @@ def get_all_test_names() -> list[str]:
     return list(TEST_BY_NAME.keys())
 
 
+# Deterministic test code. These are executed DIRECTLY (no LLM code-gen) so the
+# number the user sees is always scipy's number, not an LLM's impression of it.
+#
+# Column names are attacker-controlled (they come from the uploaded CSV header),
+# so they are NEVER string-interpolated as raw text. Instead the templates carry
+# sentinel tokens (__COL_A__, __OUTCOME__, ...) that `render_template` replaces
+# with the repr() of the real column name. Sentinels (not str.format) are used so
+# the f-string braces inside these scripts (e.g. {r:.4f}) are left untouched.
 CODE_TEMPLATES: dict[str, str] = {
     "pearson": """
 import pandas as pd
 from scipy import stats
 df = pd.read_csv('/home/user/data.csv')
-x = df['{var_a}'].dropna()
-y = df['{var_b}'].dropna()
+x = df[__COL_A__].dropna()
+y = df[__COL_B__].dropna()
 common = x.index.intersection(y.index)
 x, y = x[common], y[common]
 r, p = stats.pearsonr(x, y)
@@ -102,8 +110,8 @@ print(f"N: {len(x)}")
 import pandas as pd
 from scipy import stats
 df = pd.read_csv('/home/user/data.csv')
-x = df['{var_a}'].dropna()
-y = df['{var_b}'].dropna()
+x = df[__COL_A__].dropna()
+y = df[__COL_B__].dropna()
 common = x.index.intersection(y.index)
 x, y = x[common], y[common]
 rho, p = stats.spearmanr(x, y)
@@ -116,10 +124,27 @@ import pandas as pd
 import numpy as np
 from scipy import stats
 df = pd.read_csv('/home/user/data.csv')
-groups = df['{grouping_var}'].dropna().unique()
-g1 = df[df['{grouping_var}'] == groups[0]]['{outcome_var}'].dropna()
-g2 = df[df['{grouping_var}'] == groups[1]]['{outcome_var}'].dropna()
+groups = df[__GROUPING__].dropna().unique()
+g1 = df[df[__GROUPING__] == groups[0]][__OUTCOME__].dropna()
+g2 = df[df[__GROUPING__] == groups[1]][__OUTCOME__].dropna()
 t, p = stats.ttest_ind(g1, g2, equal_var=True)
+pooled_std = np.sqrt(((len(g1)-1)*g1.std()**2 + (len(g2)-1)*g2.std()**2) / (len(g1)+len(g2)-2))
+d = (g1.mean() - g2.mean()) / pooled_std
+print(f"Group 1 ({groups[0]}): mean={g1.mean():.4f}, n={len(g1)}")
+print(f"Group 2 ({groups[1]}): mean={g2.mean():.4f}, n={len(g2)}")
+print(f"T-statistic: {t:.4f}")
+print(f"P-value: {p:.4f}")
+print(f"Cohen's d: {d:.4f}")
+""",
+    "welch_t": """
+import pandas as pd
+import numpy as np
+from scipy import stats
+df = pd.read_csv('/home/user/data.csv')
+groups = df[__GROUPING__].dropna().unique()
+g1 = df[df[__GROUPING__] == groups[0]][__OUTCOME__].dropna()
+g2 = df[df[__GROUPING__] == groups[1]][__OUTCOME__].dropna()
+t, p = stats.ttest_ind(g1, g2, equal_var=False)
 pooled_std = np.sqrt(((len(g1)-1)*g1.std()**2 + (len(g2)-1)*g2.std()**2) / (len(g1)+len(g2)-2))
 d = (g1.mean() - g2.mean()) / pooled_std
 print(f"Group 1 ({groups[0]}): mean={g1.mean():.4f}, n={len(g1)}")
@@ -133,9 +158,9 @@ import pandas as pd
 import numpy as np
 from scipy import stats
 df = pd.read_csv('/home/user/data.csv')
-groups = df['{grouping_var}'].dropna().unique()
-g1 = df[df['{grouping_var}'] == groups[0]]['{outcome_var}'].dropna()
-g2 = df[df['{grouping_var}'] == groups[1]]['{outcome_var}'].dropna()
+groups = df[__GROUPING__].dropna().unique()
+g1 = df[df[__GROUPING__] == groups[0]][__OUTCOME__].dropna()
+g2 = df[df[__GROUPING__] == groups[1]][__OUTCOME__].dropna()
 u, p = stats.mannwhitneyu(g1, g2, alternative='two-sided')
 r = 1 - (2 * u) / (len(g1) * len(g2))
 print(f"Group 1 ({groups[0]}): median={g1.median():.4f}, n={len(g1)}")
@@ -148,8 +173,8 @@ print(f"Effect size r: {r:.4f}")
 import pandas as pd
 from scipy import stats
 df = pd.read_csv('/home/user/data.csv')
-groups = [group['{outcome_var}'].dropna() for _, group in df.groupby('{grouping_var}')]
-group_labels = df['{grouping_var}'].dropna().unique()
+groups = [group[__OUTCOME__].dropna() for _, group in df.groupby(__GROUPING__)]
+group_labels = df[__GROUPING__].dropna().unique()
 h, p = stats.kruskal(*groups)
 n = sum(len(g) for g in groups)
 epsilon_sq = (h - len(groups) + 1) / (n - len(groups))
@@ -164,7 +189,7 @@ import pandas as pd
 from scipy import stats
 import numpy as np
 df = pd.read_csv('/home/user/data.csv')
-contingency = pd.crosstab(df['{var_a}'], df['{var_b}'])
+contingency = pd.crosstab(df[__COL_A__], df[__COL_B__])
 chi2, p, dof, expected = stats.chi2_contingency(contingency)
 n = contingency.values.sum()
 cramers_v = np.sqrt(chi2 / (n * (min(contingency.shape) - 1)))
@@ -177,7 +202,7 @@ print(f"Cramer's V: {cramers_v:.4f}")
 import pandas as pd
 from scipy import stats
 df = pd.read_csv('/home/user/data.csv')
-contingency = pd.crosstab(df['{var_a}'], df['{var_b}'])
+contingency = pd.crosstab(df[__COL_A__], df[__COL_B__])
 if contingency.shape != (2, 2):
     print("Fisher's exact test requires a 2x2 table.")
     print("Your table shape:", contingency.shape)
@@ -190,12 +215,12 @@ else:
 import pandas as pd
 from scipy import stats
 df = pd.read_csv('/home/user/data.csv')
-groups = [group['{outcome_var}'].dropna() for _, group in df.groupby('{grouping_var}')]
-group_labels = df['{grouping_var}'].dropna().unique()
+groups = [group[__OUTCOME__].dropna() for _, group in df.groupby(__GROUPING__)]
+group_labels = df[__GROUPING__].dropna().unique()
 f, p = stats.f_oneway(*groups)
-grand_mean = df['{outcome_var}'].mean()
+grand_mean = df[__OUTCOME__].mean()
 ss_between = sum(len(g) * (g.mean() - grand_mean)**2 for g in groups)
-ss_total = sum((df['{outcome_var}'].dropna() - grand_mean)**2)
+ss_total = sum((df[__OUTCOME__].dropna() - grand_mean)**2)
 eta_sq = ss_between / ss_total
 print(f"F-statistic: {f:.4f}")
 print(f"P-value: {p:.4f}")
@@ -203,25 +228,68 @@ print(f"Eta-squared: {eta_sq:.4f}")
 for label, g in zip(group_labels, groups):
     print(f"  {label}: mean={g.mean():.4f}, n={len(g)}")
 """,
+    # Welch's ANOVA computed directly (no pingouin dependency) so it never
+    # silently degrades to a regular ANOVA — which would defeat the whole point,
+    # since Welch's is chosen precisely when variances are unequal.
     "welch_anova": """
 import pandas as pd
+import numpy as np
 from scipy import stats
 df = pd.read_csv('/home/user/data.csv')
-groups = [group['{outcome_var}'].dropna() for _, group in df.groupby('{grouping_var}')]
-group_labels = df['{grouping_var}'].dropna().unique()
-try:
-    import pingouin as pg
-    result = pg.welch_anova(data=df, dv='{outcome_var}', between='{grouping_var}')
-    print(result[['Source','F','p-unc','np2']].to_string())
-except ImportError:
-    f, p = stats.f_oneway(*groups)
-    print(f"F-statistic (approx): {f:.4f}")
-    print(f"P-value: {p:.4f}")
-for label, g in zip(group_labels, groups):
+grouped = [(label, g[__OUTCOME__].dropna()) for label, g in df.groupby(__GROUPING__)]
+grouped = [(label, g) for label, g in grouped if len(g) > 1]
+k = len(grouped)
+n_i = np.array([len(g) for _, g in grouped])
+mean_i = np.array([g.mean() for _, g in grouped])
+var_i = np.array([g.var(ddof=1) for _, g in grouped])
+w_i = n_i / var_i
+w_sum = w_i.sum()
+grand = (w_i * mean_i).sum() / w_sum
+numerator = ((w_i * (mean_i - grand) ** 2).sum()) / (k - 1)
+denom_term = (((1 - w_i / w_sum) ** 2) / (n_i - 1)).sum()
+denominator = 1 + (2 * (k - 2) / (k ** 2 - 1)) * denom_term
+F = numerator / denominator
+df1 = k - 1
+df2 = (k ** 2 - 1) / (3 * denom_term)
+p = stats.f.sf(F, df1, df2)
+grand_mean = df[__OUTCOME__].mean()
+ss_between = sum(len(g) * (g.mean() - grand_mean) ** 2 for _, g in grouped)
+ss_total = sum((df[__OUTCOME__].dropna() - grand_mean) ** 2)
+eta_sq = ss_between / ss_total if ss_total else float('nan')
+print(f"F-statistic: {F:.4f}")
+print(f"P-value: {p:.4f}")
+print(f"Eta-squared: {eta_sq:.4f}")
+for label, g in grouped:
     print(f"  {label}: mean={g.mean():.4f}, n={len(g)}")
 """,
 }
 
+# Which sentinel tokens each template consumes. Correlation / categorical tests
+# take a symmetric pair (col_a, col_b); group comparisons take (outcome, grouping).
+_PAIR_TESTS = {"pearson", "spearman", "chi_square", "fisher_exact"}
+
 
 def get_code_template(template_key: str) -> str | None:
     return CODE_TEMPLATES.get(template_key)
+
+
+def render_template(template_key: str, *, col_a: str, col_b: str) -> str | None:
+    """Fill a deterministic test template with real column names, SAFELY.
+
+    For pair tests (correlation / categorical), col_a and col_b map to
+    __COL_A__/__COL_B__. For group comparisons, col_a is the numeric OUTCOME and
+    col_b is the categorical GROUPING variable (the caller must order them that
+    way — `select_test` already normalizes this). Names are inserted via repr()
+    so a maliciously-named column can't break out of the string literal.
+    """
+    template = CODE_TEMPLATES.get(template_key)
+    if template is None:
+        return None
+    a, b = repr(col_a), repr(col_b)
+    return (
+        template
+        .replace("__COL_A__", a)
+        .replace("__COL_B__", b)
+        .replace("__OUTCOME__", a)
+        .replace("__GROUPING__", b)
+    )

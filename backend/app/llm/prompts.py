@@ -40,6 +40,11 @@ Rules:
 - Always print() the key numbers so they appear in your answer.
 - Be concise in your final answer — lead with the insight, not the code.
 - Do not claim statistical significance without a formal test.
+- Available libraries: pandas, numpy, scipy, scikit-learn, matplotlib, seaborn.
+  statsmodels is NOT installed — do NOT import it. For regression, use
+  scipy.stats.linregress (simple) or sklearn.linear_model / numpy least squares
+  (multiple), and compute the stats you need directly. Don't waste steps probing
+  for libraries.
 
 Charts:
 - Use matplotlib. A house visual theme is ALREADY configured (colors, fonts, grid,
@@ -59,6 +64,18 @@ Write a plain-language explanation of the result.
 Include: what the test found, what the p-value means in plain terms, and what this implies for the research question.
 Flag anything that looks suspicious (p=0.000 on small samples, implausibly large effect sizes, etc).
 Return JSON only matching the ConfirmatoryNarration schema.
+"""
+
+ASSISTED_TEST_SYSTEM_PROMPT = """
+You are a statistician writing analysis code for a case the verified test library
+does not cover. Write correct, minimal Python using scipy/statsmodels/pandas.
+
+Rules:
+- data.csv is pre-loaded at /home/user/data.csv. Load it with pandas.
+- Choose the single most defensible standard test for the two columns given.
+- print() the test name, the test statistic, the p-value, and an effect size.
+- Do NOT fabricate numbers; only print what the code computes.
+- No plotting. Return ONLY raw Python code, no markdown, no prose.
 """
 
 ORIENTATION_SYSTEM_PROMPT = """

@@ -10,6 +10,9 @@ class Session(BaseModel):
     created_at: datetime
     last_active_at: datetime
     title: Optional[str] = None
+    # Explicit task mode, chosen once at creation and fixed for the task's
+    # lifetime: 'explore' (free-form chat) or 'guided' (staged pipeline).
+    mode: str = "explore"
     dataset_filename: Optional[str] = None
     dataset_csv: Optional[str] = None
     sandbox_id: Optional[str] = None
@@ -17,6 +20,9 @@ class Session(BaseModel):
     hypothesis_text: Optional[str] = None
     hypothesis_columns: Optional[list[str]] = None
     pending_candidate: Optional[str] = None
+    # DEPRECATED (migration 006): no longer read/written. Rail visibility now
+    # derives from `mode == 'guided'`; nudges are always eligible. Kept on the
+    # model so rows created before the cleanup migration still deserialize.
     hypothesis_on_record: bool = False
     suggestion_mode: bool = False
     feedback_count: int = 0
@@ -82,8 +88,7 @@ class UploadResponse(BaseModel):
 
 class SessionStateResponse(BaseModel):
     session_id: str
-    hypothesis_on_record: bool
-    suggestion_mode: bool
+    mode: str = "explore"
     hypothesis_text: Optional[str]
     dataset_filename: Optional[str]
     profile_summary: Optional[dict[str, Any]]

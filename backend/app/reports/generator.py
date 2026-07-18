@@ -15,7 +15,13 @@ async def generate_report(session_id: str) -> dict[str, Any]:
     if not session:
         raise ValueError(f"Session {session_id} not found")
 
+    # Body uses the current (non-superseded) artifacts. The statistical summary
+    # additionally pulls the FULL family (including superseded re-runs) so the
+    # multiple-comparisons correction sees every test actually performed — a
+    # significant result that only survived after several attempts on the same
+    # pair should not be reported at face value.
     artifacts = await run_db(get_artifacts_for_session, session_id, include_superseded=False)
+    all_artifacts = await run_db(get_artifacts_for_session, session_id, include_superseded=True)
     if not artifacts:
         raise ValueError("No completed analyses found. Run some analyses first before generating a report.")
 
@@ -28,23 +34,24 @@ async def generate_report(session_id: str) -> dict[str, Any]:
     sections: list[str] = []
     sections.append(_build_title(session, stages_covered))
 
-    if session.hypothesis_on_record and session.hypothesis_text:
+    if session.hypothesis_text:
         sections.append(_build_research_question_section(session))
 
     for stage in _STAGE_ORDER:
         stage_artifacts = by_stage[stage]
         if not stage_artifacts:
             continue
-        label = _STAGE_LABELS.get(stage, stage.title())
-        sections.append(f"## {label}\n")
-        for artifact in stage_artifacts:
-            section = _build_artifact_section(artifact)
-            if section:
-                sections.append(section)
+        # Only emit the stage header if at least one artifact renders something
+        # (replay-only 'derived_column' artifacts render nothing).
+        rendered = [s for s in (_build_artifact_section(a) for a in stage_artifacts) if s]
+        if not rendered:
+            continue
+        sections.append(f"## {_STAGE_LABELS.get(stage, stage.title())}\n")
+        sections.extend(rendered)
 
-    inferential = by_stage.get("inferential", [])
-    if inferential:
-        sections.append(_build_summary_section(inferential))
+    test_results = [a for a in all_artifacts if a.artifact_type == "test_result"]
+    if test_results:
+        sections.append(_build_summary_section(test_results))
 
     markdown = "\n\n".join(sections)
     date_str = datetime.now().strftime("%Y%m%d")
@@ -91,6 +98,8 @@ def _format_test_result(content, var_str):
 
     lines = [f"### {test_name}"]
     if var_str: lines.append(f"**Variables:** {var_str}")
+    if not content.get("engine_verified", True):
+        lines.append("> ⚠️ Assisted analysis — chosen and written by the assistant, not from the verified test library.")
     if reasoning: lines.append(f"**Why this test:** {reasoning}")
     lines.append("")
     lines.append("**Results:**")
@@ -141,21 +150,80 @@ def _format_cleaning(content):
     return "\n".join(lines)
 
 
-def _build_summary_section(inferential_artifacts):
-    lines = ["## Summary of Statistical Results", "", "| Test | Variables | p-value | Significant? |", "|------|-----------|---------|--------------|"]
-    for artifact in inferential_artifacts:
+def _bh_adjust(pvals: list[float]) -> list[float]:
+    """Benjamini-Hochberg step-up FDR adjustment. Returns adjusted p-values in
+    the same order as the input."""
+    m = len(pvals)
+    if m == 0:
+        return []
+    order = sorted(range(m), key=lambda i: pvals[i])  # ascending by p
+    adj = [1.0] * m
+    min_so_far = 1.0
+    # Walk from the largest p (rank m) down to the smallest (rank 1).
+    for rank in range(m, 0, -1):
+        idx = order[rank - 1]
+        val = pvals[idx] * m / rank
+        min_so_far = min(min_so_far, val)
+        adj[idx] = min(min_so_far, 1.0)
+    return adj
+
+
+def _build_summary_section(test_artifacts):
+    """Summarise every statistical test performed this session. Verified-library
+    tests are corrected for multiple comparisons (Benjamini-Hochberg); assisted,
+    unverified analyses are listed separately and NOT pooled into the correction
+    (their Type-I error rate isn't characterised the way a verified test's is)."""
+    verified = [a for a in test_artifacts if (a.content or {}).get("engine_verified", True)]
+    assisted = [a for a in test_artifacts if not (a.content or {}).get("engine_verified", True)]
+
+    lines = ["## Summary of Statistical Results"]
+
+    v_with_p = [a for a in verified if (a.content or {}).get("p_value") is not None]
+    if v_with_p:
+        pvals = [float(a.content["p_value"]) for a in v_with_p]
+        adjusted = _bh_adjust(pvals)
+        multiple = len(v_with_p) > 1
+        note = (
+            f"\n{len(v_with_p)} verified tests were run this session. p-values below are "
+            "adjusted for multiple comparisons (Benjamini-Hochberg FDR); a result is only "
+            "called significant if its **adjusted** p-value is below 0.05."
+            if multiple else ""
+        )
+        lines.append(note)
+        header = "| Test | Variables | p-value | Adjusted p | Significant? |"
+        lines.append("")
+        lines.append(header)
+        lines.append("|------|-----------|---------|-----------|--------------|")
+        for artifact, adj in zip(v_with_p, adjusted):
+            content = artifact.content or {}
+            test = content.get("display_name", "Test")
+            var_str = " vs ".join(artifact.variables_involved or [])
+            p = float(content["p_value"])
+            sig = "Yes" if adj < 0.05 else "No"
+            adj_str = f"{adj:.4f}" if multiple else "—"
+            lines.append(f"| {test} | {var_str} | {p:.4f} | {adj_str} | {sig} |")
+
+    # Verified tests with no parseable p-value.
+    for artifact in [a for a in verified if a not in v_with_p]:
         content = artifact.content or {}
-        test = content.get("display_name", "Test")
-        variables = artifact.variables_involved or []
-        var_str = " vs ".join(variables)
-        p = content.get("p_value")
-        if p is not None:
-            sig = "Yes" if p < 0.05 else "No"
-            p_str = f"{p:.4f}"
-        else:
-            sig = "—"
-            p_str = "—"
-        lines.append(f"| {test} | {var_str} | {p_str} | {sig} |")
+        var_str = " vs ".join(artifact.variables_involved or [])
+        lines.append(f"| {content.get('display_name', 'Test')} | {var_str} | — | — | — |")
+
+    if assisted:
+        lines.append("")
+        lines.append("### Assisted analyses (not from the verified test library)")
+        lines.append("")
+        lines.append("These were chosen and written by the assistant for cases the verified library doesn't cover. Treat them with more caution; they are **not** included in the correction above.")
+        lines.append("")
+        lines.append("| Analysis | Variables | p-value |")
+        lines.append("|----------|-----------|---------|")
+        for artifact in assisted:
+            content = artifact.content or {}
+            var_str = " vs ".join(artifact.variables_involved or [])
+            p = content.get("p_value")
+            p_str = f"{p:.4f}" if p is not None else "—"
+            lines.append(f"| {content.get('display_name', 'Assisted analysis')} | {var_str} | {p_str} |")
+
     return "\n".join(lines)
 
 

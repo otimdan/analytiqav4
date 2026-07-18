@@ -56,14 +56,20 @@ for col in df.columns:
         col_profile["likely_datetime"] = pd.api.types.is_datetime64_any_dtype(series)
 
     name_lower = col.lower()
-    if col_profile.get("uniqueness_ratio", 0) > 0.95:
-        col_profile["semantic_guess"] = "identifier"
-    elif col_profile.get("likely_datetime"):
+    is_numeric_col = pd.api.types.is_numeric_dtype(series)
+    is_float_col = pd.api.types.is_float_dtype(series)
+    # Tight id-name test (word-ish), so 'diagnosis' isn't tagged an id by 'no'.
+    id_name = (name_lower in ("id", "index") or name_lower.endswith("_id")
+               or name_lower.endswith("id") and len(name_lower) <= 6
+               or any(kw in name_lower for kw in ["uuid", "guid", "_code", "_ref", "_key"]))
+    if col_profile.get("likely_datetime"):
+        # Only when the values actually parse as dates (not a name guess).
         col_profile["semantic_guess"] = "datetime"
-    elif any(kw in name_lower for kw in ["id", "code", "ref", "key", "no", "num"]):
+    elif not is_numeric_col and col_profile.get("uniqueness_ratio", 0) > 0.95:
+        # All-unique NON-numeric column = identifier (names, emails, codes).
         col_profile["semantic_guess"] = "identifier"
-    elif any(kw in name_lower for kw in ["date", "time", "year", "month", "day"]):
-        col_profile["semantic_guess"] = "datetime"
+    elif id_name and not is_float_col:
+        col_profile["semantic_guess"] = "identifier"
     elif any(kw in name_lower for kw in ["group", "arm", "intervention", "treatment",
                                            "village", "region", "district", "sex",
                                            "gender", "category", "type", "status"]):

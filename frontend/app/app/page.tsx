@@ -1,6 +1,7 @@
 "use client"
 import { useState, useCallback, useRef, useEffect, useMemo } from "react"
-import type { Message, StreamChunk, ChartImage } from "@/lib/types"
+import type { Message, StreamChunk, ChartImage, TaskMode } from "@/lib/types"
+import { deriveGuidedProgress } from "@/lib/types"
 import { getMessages } from "@/lib/api"
 import { useSession } from "@/hooks/useSession"
 import { useTasks } from "@/hooks/useTasks"
@@ -12,6 +13,7 @@ import { ChatInput } from "@/components/chat/ChatInput"
 import { MessageList } from "@/components/chat/MessageList"
 import { StreamingOutput } from "@/components/chat/StreamingOutput"
 import { Sidebar } from "@/components/layout/Sidebar"
+import { ModePicker } from "@/components/mode/ModePicker"
 import { DataExplorer } from "@/components/artifacts/DataExplorer"
 import { AccountMenu } from "@/components/auth/AccountMenu"
 import { UsageMeter } from "@/components/account/UsageMeter"
@@ -28,6 +30,9 @@ export default function AnalysisPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [dismissedFeedback, setDismissedFeedback] = useState<Set<string>>(new Set())
+  // Mode chosen in the picker for a NEW task, before any dataset/session exists.
+  // Null = show the picker; set = show the upload screen for that mode.
+  const [chosenMode, setChosenMode] = useState<TaskMode | null>(null)
   const historyLoadedFor = useRef<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -84,8 +89,8 @@ export default function AnalysisPage() {
             case "text": msg.content += chunk.content || ""; msg.regime = chunk.regime; if (chunk.show_feedback) msg.show_feedback = true; break
             case "image": msg.images = [...msg.images, { src: chunk.content || "", caption: chunk.caption }]; break
             case "disambiguation": msg.disambiguation = chunk.prompt; break
-            case "confirmation_prompt": msg.confirmation_prompt = chunk.content; break
-            case "guidance_suggestion": msg.guidance_suggestion = chunk.content; msg.guidance_next_action = chunk.next_action; msg.is_hypothesis_candidate = chunk.is_hypothesis_candidate; break
+            case "guidance_suggestion": msg.guidance_suggestion = chunk.content; msg.guidance_next_action = chunk.next_action; msg.guidance_style = chunk.nudge_style; break
+            case "verification": msg.engine_verified = chunk.engine_verified; msg.verified_test_name = chunk.test_display_name; break
             case "report": msg.report = chunk.report; break
             case "code_execution": msg.executions = [...(msg.executions ?? []), { code: chunk.code || "", output: chunk.output || "" }]; break
             case "done": if (chunk.message_id) msg.server_message_id = chunk.message_id; break
@@ -116,33 +121,38 @@ export default function AnalysisPage() {
     const file = e.target.files?.[0]
     e.target.value = "" // allow re-selecting the same file
     if (!file) return
+    // Mode for the new task: the picker choice, else the current task's mode, else explore.
+    const uploadMode: TaskMode = chosenMode ?? sessionState?.mode ?? "explore"
     historyLoadedFor.current = "pending" // don't let history load clobber the greeting
-    const result = await upload(file)
+    const result = await upload(file, uploadMode)
     if (result) {
       historyLoadedFor.current = result.session_id
-      setMessages([{
-        id: nanoid(), role: "assistant",
-        content: `Loaded ${result.rows} rows and ${result.columns} columns from ${result.filename}. What are you trying to find out — or are you just exploring for now?`,
-        images: [], created_at: new Date(),
-      }])
+      const greeting = uploadMode === "guided"
+        ? `Loaded ${result.rows} rows and ${result.columns} columns from ${result.filename}. What's your research question? Tell me what you want to test and I'll take you through it step by step.`
+        : `Loaded ${result.rows} rows and ${result.columns} columns from ${result.filename}. What would you like to explore?`
+      setMessages([{ id: nanoid(), role: "assistant", content: greeting, images: [], created_at: new Date() }])
       tasks.refresh()
     } else {
       historyLoadedFor.current = null
     }
-  }, [upload, tasks])
+  }, [upload, tasks, chosenMode, sessionState?.mode])
 
   const handleAttach = useCallback(() => fileInputRef.current?.click(), [])
+
+  const handleChooseMode = useCallback((mode: TaskMode) => setChosenMode(mode), [])
 
   const handleNewTask = useCallback(() => {
     if (isStreaming) return
     end()
     setMessages([])
+    setChosenMode(null) // back to the mode picker
     historyLoadedFor.current = null
   }, [isStreaming, end])
 
   const handleSelectTask = useCallback(async (id: string) => {
     if (isStreaming || id === sessionId) return
     setMessages([])
+    setChosenMode(null)
     historyLoadedFor.current = null
     await select(id)
   }, [isStreaming, sessionId, select])
@@ -160,13 +170,24 @@ export default function AnalysisPage() {
 
   const hasDataset = !!sessionId
 
+  // Guided step-rail progress, derived from artifacts + session state.
+  const guidedProgress = useMemo(
+    () => deriveGuidedProgress({
+      hasDataset,
+      hasProfile: !!sessionState?.profile_summary,
+      completedStages,
+      hasReport: allReports.length > 0,
+    }),
+    [hasDataset, sessionState?.profile_summary, completedStages, allReports.length],
+  )
+
   return (
     <div className="flex h-screen overflow-hidden bg-white">
       <input ref={fileInputRef} type="file" accept=".csv" onChange={handleFileChange} className="hidden" />
 
       <Sidebar
         guidance={guidance}
-        completedStages={completedStages}
+        guidedProgress={guidedProgress}
         tasks={tasks.tasks}
         activeTaskId={sessionId}
         onNewTask={handleNewTask}
@@ -187,7 +208,7 @@ export default function AnalysisPage() {
             <>
               <MessageList
                 messages={messages.map((m) => ({ ...m, show_feedback: m.show_feedback && !dismissedFeedback.has(m.id) }))}
-                sessionId={sessionId} suggestionMode={guidance.suggestion_mode} isStreaming={isStreaming}
+                sessionId={sessionId} isStreaming={isStreaming}
                 onOptionSelect={(_, opt) => handleSend(opt)}
                 onGuidanceAccept={() => handleSend("Track as project")}
                 onGuidanceRun={(query) => handleSend(query)}
@@ -195,8 +216,10 @@ export default function AnalysisPage() {
               />
               <StreamingOutput isVisible={isStreaming} />
             </>
+          ) : chosenMode ? (
+            <EmptyState onUpload={handleAttach} loading={loading} error={error} mode={chosenMode} />
           ) : (
-            <EmptyState onUpload={handleAttach} loading={loading} error={error} />
+            <ModePicker onChoose={handleChooseMode} />
           )}
         </div>
 
@@ -219,11 +242,15 @@ export default function AnalysisPage() {
   )
 }
 
-function EmptyState({ onUpload, loading, error }: { onUpload: () => void; loading: boolean; error: string | null }) {
+function EmptyState({ onUpload, loading, error, mode }: { onUpload: () => void; loading: boolean; error: string | null; mode: TaskMode }) {
+  const isGuided = mode === "guided"
   return (
     <div className="flex h-full flex-col items-center justify-center px-4 text-center">
-      <h1 className="text-2xl font-semibold text-gray-800">What can I do for you today?</h1>
-      <p className="mt-2 text-sm text-gray-500">Upload a CSV and I&apos;ll help you explore, test, and visualize it.</p>
+      <span className={`mb-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${isGuided ? "bg-emerald-50 text-emerald-700" : "bg-indigo-50 text-indigo-700"}`}>
+        {isGuided ? "Guided analysis" : "Explore your data"}
+      </span>
+      <h1 className="text-2xl font-semibold text-gray-800">{isGuided ? "Upload a dataset to begin your guided analysis" : "What can I do for you today?"}</h1>
+      <p className="mt-2 text-sm text-gray-500">{isGuided ? "I'll take you from raw data to a finished report, one step at a time." : "Upload a CSV and I'll help you explore, test, and visualize it."}</p>
       <button
         onClick={onUpload}
         disabled={loading}
