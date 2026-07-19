@@ -15,9 +15,10 @@ services:
       # Pin Python (numpy/scipy/pandas wheels here target 3.12).
       - key: PYTHON_VERSION
         value: 3.12.7
-      # Non-secret defaults.
+      # Non-secret defaults. (Sentry env is just a filter label — kept as
+      # development for now; bump to production at real launch.)
       - key: SENTRY_ENVIRONMENT
-        value: production
+        value: development
       - key: POSTHOG_HOST
         value: https://us.i.posthog.com
       - key: DODO_PAYMENTS_ENVIRONMENT
