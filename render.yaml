@@ -1,0 +1,54 @@
+# Render Blueprint for the FastAPI backend.
+# In Render: New → Blueprint → point at this repo. It pre-fills the service; you
+# then paste the secret env vars (the ones marked `sync: false`) in the dashboard.
+# The Next.js frontend is deployed separately on Vercel (root dir: frontend).
+services:
+  - type: web
+    name: analytika-api
+    runtime: python
+    rootDir: backend
+    plan: free # upgrade to "starter" ($7/mo) later to remove idle spin-down
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      # Pin Python (numpy/scipy/pandas wheels here target 3.12).
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      # Non-secret defaults.
+      - key: SENTRY_ENVIRONMENT
+        value: production
+      - key: POSTHOG_HOST
+        value: https://us.i.posthog.com
+      - key: DODO_PAYMENTS_ENVIRONMENT
+        value: test_mode
+      # CRITICAL: set to your Vercel URL, e.g. https://your-app.vercel.app
+      - key: ALLOWED_ORIGINS
+        sync: false
+      # Secrets — paste these in the Render dashboard (never committed).
+      - key: FIREWORKS_API_KEY
+        sync: false
+      - key: FIREWORKS_MODEL_MAIN
+        sync: false
+      - key: FIREWORKS_MODEL_CLASSIFIER
+        sync: false
+      - key: FIREWORKS_MODEL_CHAT
+        sync: false
+      - key: E2B_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: POSTHOG_API_KEY
+        sync: false
+      - key: DODO_PAYMENTS_API_KEY
+        sync: false
+      - key: DODO_PAYMENTS_WEBHOOK_KEY
+        sync: false
+      - key: DODO_PRO_PRODUCT_ID
+        sync: false
+      - key: APP_URL
+        sync: false
