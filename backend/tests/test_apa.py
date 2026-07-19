@@ -105,6 +105,22 @@ class TestExtractor:
         groups = extract_test_stats("one_way_anova", out)["groups"]
         assert {g["label"] for g in groups} == {"north", "south", "east"}
 
+    def test_anova_group_labels_paired_with_correct_values(self):
+        # Regression guard for the label-misalignment bug: fixture means are
+        # north~100 (lowest), south~106, east~112 (highest), and the rows are
+        # BLOCK-ordered so unique() != groupby() order — the exact case that used
+        # to attach each mean to the WRONG group label.
+        out = run_tpl(F.numeric_by_3group_equalvar(), "one_way_anova", "bp", "region")
+        means = {g["label"]: g["center"] for g in extract_test_stats("one_way_anova", out)["groups"]}
+        assert means["east"] == max(means.values())   # highest true mean -> 'east'
+        assert means["north"] == min(means.values())  # lowest -> 'north'
+
+    def test_kruskal_group_labels_paired_with_correct_values(self):
+        out = run_tpl(F.numeric_by_3group_skewed(), "kruskal_wallis", "bp", "region")
+        meds = {g["label"]: g["center"] for g in extract_test_stats("kruskal_wallis", out)["groups"]}
+        assert meds["east"] == max(meds.values())
+        assert meds["north"] == min(meds.values())
+
     def test_empty_output_yields_empty_dict(self):
         assert extract_test_stats("independent_t", "") == {}
 

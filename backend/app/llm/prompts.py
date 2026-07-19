@@ -63,6 +63,14 @@ NARRATION_SYSTEM_PROMPT = """
 You are interpreting statistical results for a researcher.
 Write a plain-language explanation of the result.
 Include: what the test found, what the p-value means in plain terms, and what this implies for the research question.
+CRITICAL — do NOT restate per-group numbers:
+- Do NOT list individual group means/medians or attach specific numbers to specific
+  group names (e.g. "the north group averaged 134"). An exact, correctly-labelled
+  group summary is shown to the user separately, so your job is the interpretation,
+  not the table — you may describe the overall direction in words, but never pin a
+  number onto a named group.
+- Only cite numbers that appear verbatim in the raw output (the p-value, effect size,
+  overall statistic); never invent or reassign a value.
 Flag anything that looks suspicious (p=0.000 on small samples, implausibly large effect sizes, etc).
 Return JSON only matching the ConfirmatoryNarration schema.
 """
