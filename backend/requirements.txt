@@ -1,15 +1,20 @@
 # backend/requirements.txt
+#
+# Versions here match the environment the test suite (207 passing) and the live
+# end-to-end runs were validated against. Do NOT downgrade to satisfy an older
+# host default — the code uses the E2B 2.x API. Deploy on Python 3.12 (see
+# backend/.python-version); all wheels below are available for 3.12.
 
 # ── Web framework ─────────────────────────────────────────────
-fastapi==0.115.0
-uvicorn[standard]==0.30.6
-python-multipart==0.0.9
+fastapi==0.139.0
+uvicorn[standard]==0.49.0
+python-multipart==0.0.32
 
 # ── Environment ───────────────────────────────────────────────
-python-dotenv==1.0.1
+python-dotenv==1.2.2
 
 # ── Auth (verify Supabase JWTs) ───────────────────────────────
-PyJWT==2.9.0
+PyJWT==2.13.0
 cryptography>=43.0.0  # required by PyJWT to verify ES256 (asymmetric signing keys)
 
 # ── Payments (Dodo Payments) ──────────────────────────────────
@@ -17,46 +22,44 @@ dodopayments>=1.0.0
 standardwebhooks>=1.0.0  # Standard Webhooks signature verification
 
 # ── Data validation ───────────────────────────────────────────
-pydantic==2.8.2
-pydantic-settings==2.4.0
+pydantic==2.13.4
+pydantic-settings==2.14.2
 
 # ── LLM client ────────────────────────────────────────────────
-openai==1.45.0
-httpx==0.27.2
+openai==2.44.0
+httpx==0.28.1
 
 # ── Supabase ──────────────────────────────────────────────────
-supabase==2.7.4
-gotrue==2.7.0
-postgrest==0.17.1
-realtime==2.0.2
-storage3==0.8.1
+supabase==2.31.0
+gotrue==2.12.4
+postgrest==2.31.0
+realtime==2.31.0
+storage3==2.31.0
 
 # ── E2B sandbox ───────────────────────────────────────────────
-e2b-code-interpreter==1.0.3
-e2b==0.17.2
+# `e2b` is pulled in transitively by e2b-code-interpreter — do NOT pin it
+# separately (the old 0.x releases were yanked from PyPI, which breaks the build).
+e2b-code-interpreter==2.8.1
 
-# ── Observability (all optional — no-op unless the env vars are set) ──
-sentry-sdk[fastapi]==2.18.0   # error tracking; activates only with SENTRY_DSN
-posthog==3.7.0                # product analytics; activates only with POSTHOG_API_KEY
+# ── Observability (optional at runtime — inert unless the DSN/keys are set) ──
+sentry-sdk[fastapi]==2.18.0
+posthog==3.7.0
 
 # ── Data science ──────────────────────────────────────────────
-pandas==2.2.2
-numpy==1.26.4
-scipy==1.14.0
-matplotlib==3.9.2
+# NOTE: the API backend does NOT import these — they run inside the E2B sandbox
+# (and the local test harness execs the same scripts). Kept here so the test
+# suite runs; they add build time but no runtime memory on the server.
+pandas==3.0.3
+numpy==2.5.0
+scipy==1.18.0
+matplotlib==3.11.0
 seaborn==0.13.2
 statsmodels==0.14.6
+scikit-posthocs==0.14.0
+pingouin==0.6.1
 
-# ── Post-hoc tests ────────────────────────────────────────────
-scikit-posthocs==0.9.1
-
-# ── Optional: Welch ANOVA ─────────────────────────────────────
-pingouin==0.5.4
-
-# ── Testing ───────────────────────────────────────────────────
-pytest==8.3.2
-pytest-asyncio==0.23.8
-
-# ── Development utilities ─────────────────────────────────────
-black==24.8.0
-ruff==0.6.4
+# ── Testing / dev ─────────────────────────────────────────────
+pytest==9.1.1
+pytest-asyncio==1.4.0
+black==26.5.1
+ruff==0.15.20
