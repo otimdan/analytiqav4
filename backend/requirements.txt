@@ -35,6 +35,10 @@ storage3==0.8.1
 e2b-code-interpreter==1.0.3
 e2b==0.17.2
 
+# ── Observability (all optional — no-op unless the env vars are set) ──
+sentry-sdk[fastapi]==2.18.0   # error tracking; activates only with SENTRY_DSN
+posthog==3.7.0                # product analytics; activates only with POSTHOG_API_KEY
+
 # ── Data science ──────────────────────────────────────────────
 pandas==2.2.2
 numpy==1.26.4

@@ -54,15 +54,9 @@ async def handle(message: str, session: Session, context: dict[str, Any], recent
     if _is_regression_request(message):
         return await _regression(message, session, context, profile, mode)
 
-    variables = _extract_variables(message, profile)
-    if len(variables) < 2:
-        # The message didn't name two columns (e.g. "is that significant?").
-        # Reuse the variables the user was last working with (last chart/test)
-        # so a follow-up runs on those instead of re-asking which columns.
-        focus = [v for v in (context.get("focus_variables") or []) if v in profile.get("columns", {})]
-        variables = (variables + [v for v in focus if v not in variables])[:2]
-    if len(variables) < 2:
-        return _text_result(f"I need two variables to run a test. Which two columns would you like to compare? Available: {', '.join(list(profile['columns'].keys())[:10])}")
+    variables, clarification = resolve_pair_variables(message, profile, context.get("focus_variables"))
+    if clarification:
+        return _text_result(clarification)
 
     var_a, var_b = variables[0], variables[1]
     resolved = resolve_pair(var_a, var_b, profile)
@@ -199,6 +193,12 @@ async def _run_verified(session, context, var_a, var_b, recommended_test, reason
     }
 
     response_text = narration.plain_language_result
+    # Authoritative group means/medians rendered deterministically from the verified
+    # output — the LLM narration is instructed NOT to state per-group numbers because
+    # it sometimes swapped which group had which value (a trust bug).
+    group_summary = _format_group_descriptives(pub_stats.get("groups"))
+    if group_summary:
+        response_text += "\n\n" + group_summary
     if posthoc and posthoc.get("comparisons"):
         response_text += "\n\n" + _posthoc_summary(posthoc)
     if narration.suspect_result and narration.suspect_reason:
@@ -233,6 +233,23 @@ def _parse_posthoc(stdout: str, posthoc_key: str) -> Optional[dict[str, Any]]:
     if not comps:
         return None
     return {"method": posthoc_label(posthoc_key), "comparisons": comps}
+
+
+def _format_group_descriptives(groups) -> str:
+    """A correctly-labelled group mean/median summary, built from the verified
+    stdout (not the LLM). Guarantees the group→value mapping is right even if the
+    narration prose slips. Empty for non-grouped tests (correlation/regression)."""
+    if not groups:
+        return ""
+    ctype = groups[0].get("center_type", "mean")
+    stat_word = "means" if ctype == "mean" else "medians"
+    parts = []
+    for g in groups:
+        try:
+            parts.append(f"{g['label']}: {ctype} = {float(g['center']):.2f}, n = {int(g['n'])}")
+        except (KeyError, TypeError, ValueError):
+            continue
+    return f"**Group {stat_word}:** " + "; ".join(parts) + "." if parts else ""
 
 
 def _posthoc_summary(posthoc: dict[str, Any]) -> str:
@@ -516,6 +533,35 @@ def _first_error_line(stderr: str) -> str:
 def _extract_variables(message, profile):
     columns = list(profile.get("columns", {}).keys())
     return [col for col in columns if col.lower() in message.lower()][:2]
+
+
+def resolve_pair_variables(message, profile, focus_variables):
+    """Decide which two columns a confirmatory request is about.
+
+    Returns (variables, clarification) with exactly one truthy. The last-worked-on
+    `focus_variables` are used ONLY as a fallback for a genuine follow-up that
+    names NO column (e.g. "is that significant?"). If the user explicitly named a
+    column, we NEVER silently borrow a *different* variable from context: doing so
+    answered the wrong question with a confident, verified-looking result when a
+    column name was mistyped (e.g. "test foobar and bp" ran age-vs-bp). In that
+    case we ask, surfacing the column we did recognize."""
+    named = _extract_variables(message, profile)
+    variables = list(named)
+    cols = list(profile.get("columns", {}).keys())
+    if len(variables) == 0:
+        variables = [v for v in (focus_variables or []) if v in cols][:2]
+    if len(variables) >= 2:
+        return variables[:2], None
+
+    avail = ", ".join(cols[:10])
+    if named:
+        return None, (
+            f"I recognized '{named[0]}', but I couldn't identify a second column to compare it with — "
+            f"did you mistype a column name? Available columns: {avail}"
+        )
+    return None, (
+        f"I need two columns to run a test. Which two would you like to compare? Available: {avail}"
+    )
 
 
 def _extract_p_value(stdout):

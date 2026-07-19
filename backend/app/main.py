@@ -1,19 +1,33 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import session, query, feedback, health, artifacts, account, billing
 from app.logging_config import setup_logging
 from app.config import ALLOWED_ORIGINS
+from app.observability import init_observability, shutdown_observability
 
 import app.config  # noqa: F401 — triggers startup validation
 
 
+@asynccontextmanager
+async def _lifespan(application: FastAPI):
+    yield
+    # Flush buffered analytics on shutdown (no-op when PostHog is disabled).
+    shutdown_observability()
+
+
 def create_app() -> FastAPI:
     setup_logging()
+    # Initialise Sentry BEFORE the app is built so its FastAPI integration can wrap
+    # request handling. No-op unless SENTRY_DSN / POSTHOG_API_KEY are configured.
+    init_observability()
     application = FastAPI(
         title="Analytika API",
         version="1.0.0",
         description="AI-powered research data analysis platform for undergraduate and postgraduate researchers.",
+        lifespan=_lifespan,
     )
 
     application.add_middleware(

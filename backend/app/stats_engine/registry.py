@@ -180,8 +180,10 @@ print(f"Effect size r: {r:.4f}")
 import pandas as pd
 from scipy import stats
 df = pd.read_csv('/home/user/data.csv')
-groups = [group[__OUTCOME__].dropna() for _, group in df.groupby(__GROUPING__)]
-group_labels = df[__GROUPING__].dropna().unique()
+# Label paired with its own data from groupby (see one_way_anova note on why a
+# separate unique() list mislabels the medians).
+grouped = [(label, group[__OUTCOME__].dropna()) for label, group in df.groupby(__GROUPING__)]
+groups = [g for _, g in grouped]
 h, p = stats.kruskal(*groups)
 n = sum(len(g) for g in groups)
 epsilon_sq = (h - len(groups) + 1) / (n - len(groups))
@@ -190,7 +192,7 @@ print(f"P-value: {p:.4f}")
 print(f"Epsilon-squared: {epsilon_sq:.4f}")
 print(f"df: {len(groups) - 1}")
 print(f"N: {n}")
-for label, g in zip(group_labels, groups):
+for label, g in grouped:
     print(f"  {label}: median={g.median():.4f}, n={len(g)}")
 """,
     "chi_square": """
@@ -225,8 +227,11 @@ else:
 import pandas as pd
 from scipy import stats
 df = pd.read_csv('/home/user/data.csv')
-groups = [group[__OUTCOME__].dropna() for _, group in df.groupby(__GROUPING__)]
-group_labels = df[__GROUPING__].dropna().unique()
+# Pair each label with its OWN data straight from groupby. (Zipping a separate
+# unique() list against groupby() misaligns labels vs values, because unique() is
+# appearance-ordered and groupby() is key-sorted — that mislabelled the means.)
+grouped = [(label, group[__OUTCOME__].dropna()) for label, group in df.groupby(__GROUPING__)]
+groups = [g for _, g in grouped]
 f, p = stats.f_oneway(*groups)
 grand_mean = df[__OUTCOME__].mean()
 ss_between = sum(len(g) * (g.mean() - grand_mean)**2 for g in groups)
@@ -238,7 +243,7 @@ print(f"P-value: {p:.4f}")
 print(f"Eta-squared: {eta_sq:.4f}")
 print(f"df: {len(groups) - 1}, {_n_total - len(groups)}")
 print(f"N: {_n_total}")
-for label, g in zip(group_labels, groups):
+for label, g in grouped:
     print(f"  {label}: mean={g.mean():.4f}, n={len(g)}")
 """,
     # Welch's ANOVA computed directly (no pingouin dependency) so it never
