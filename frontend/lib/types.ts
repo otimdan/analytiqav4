@@ -23,6 +23,9 @@ export interface UploadResponse {
   columns: number
   column_names: string[]
   profile_summary: ProfileSummary
+  // What ingestion had to infer or change (a guessed encoding, dropped
+  // merged-cell header rows). Optional: older backends omit the field.
+  ingest_notes?: string[]
 }
 
 export type NudgeStyle = "directive" | "soft"

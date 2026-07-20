@@ -1,5 +1,5 @@
 "use client"
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import type { SessionState, UploadResponse, TaskMode } from "@/lib/types"
 import { uploadDataset, getSessionState, closeSession, resetConversation } from "@/lib/api"
 
@@ -9,6 +9,10 @@ export interface UseSessionReturn {
   sessionId: string | null
   sessionState: SessionState | null
   loading: boolean
+  // Resuming the previous task from localStorage on load. Kept separate from
+  // `loading` so the UI doesn't label a background restore "Analysing dataset…"
+  // and doesn't offer a mode picker it is about to replace.
+  restoring: boolean
   error: string | null
   upload: (file: File, mode: TaskMode) => Promise<UploadResponse | null>
   select: (sessionId: string) => Promise<void>
@@ -21,11 +25,19 @@ export function useSession(): UseSessionReturn {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [sessionState, setSessionState] = useState<SessionState | null>(null)
   const [loading, setLoading] = useState(false)
+  // Starts true so the first paint is a neutral "resuming" state rather than a
+  // mode picker that a landing restore would immediately snatch away. Resolved
+  // on mount, including when there is nothing stored to restore.
+  const [restoring, setRestoring] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Set once the user deliberately starts a new task, so a restore still in
+  // flight cannot drop them back into the old one.
+  const abandonedRef = useRef(false)
 
   useEffect(() => {
     const stored = localStorage.getItem(SESSION_STORAGE_KEY)
     if (stored) _restoreSession(stored)
+    else setRestoring(false)
   }, [])
 
   useEffect(() => {
@@ -35,9 +47,12 @@ export function useSession(): UseSessionReturn {
   }, [sessionId])
 
   async function _restoreSession(id: string) {
-    setLoading(true)
+    setRestoring(true)
     try {
       const state = await getSessionState(id)
+      // The user may have hit "New task" while this was in flight; honour that
+      // over a stale resume.
+      if (abandonedRef.current) return
       // Only resume a session whose dataset is still loaded. If the data was
       // wiped (or the session is otherwise unusable), drop it and fall back to
       // the upload screen instead of restoring a dead session.
@@ -54,7 +69,7 @@ export function useSession(): UseSessionReturn {
       setSessionId(null)
       setSessionState(null)
     } finally {
-      setLoading(false)
+      setRestoring(false)
     }
   }
 
@@ -124,11 +139,13 @@ export function useSession(): UseSessionReturn {
   }, [sessionId, refresh])
 
   const end = useCallback(() => {
+    abandonedRef.current = true
+    setRestoring(false)
     if (sessionId) closeSession(sessionId)
     localStorage.removeItem(SESSION_STORAGE_KEY)
     setSessionId(null)
     setSessionState(null)
   }, [sessionId])
 
-  return { sessionId, sessionState, loading, error, upload, select, refresh, reset, end }
+  return { sessionId, sessionState, loading, restoring, error, upload, select, refresh, reset, end }
 }

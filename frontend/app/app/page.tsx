@@ -22,7 +22,7 @@ import { UpgradeButton } from "@/components/account/UpgradeButton"
 function nanoid() { return crypto.randomUUID() }
 
 export default function AnalysisPage() {
-  const { sessionId, sessionState, loading, error, upload, select, refresh, end } = useSession()
+  const { sessionId, sessionState, loading, restoring, error, upload, select, refresh, end } = useSession()
   const tasks = useTasks()
   const guidance = useGuidance(sessionState)
   const { completedStages, refresh: refreshArtifacts } = useArtifacts(sessionId)
@@ -130,7 +130,13 @@ export default function AnalysisPage() {
       const greeting = uploadMode === "guided"
         ? `Loaded ${result.rows} rows and ${result.columns} columns from ${result.filename}. What's your research question? Tell me what you want to test and I'll take you through it step by step.`
         : `Loaded ${result.rows} rows and ${result.columns} columns from ${result.filename}. What would you like to explore?`
-      setMessages([{ id: nanoid(), role: "assistant", content: greeting, images: [], created_at: new Date() }])
+      // Anything ingestion had to infer is stated up front. A guessed encoding
+      // or a dropped header band changes what the numbers mean, so it belongs
+      // in the conversation, not in a log the researcher never reads.
+      const notes = result.ingest_notes?.length
+        ? "\n\n" + result.ingest_notes.map((n) => `> ⚠️ ${n}`).join("\n>\n")
+        : ""
+      setMessages([{ id: nanoid(), role: "assistant", content: greeting + notes, images: [], created_at: new Date() }])
       tasks.refresh()
     } else {
       historyLoadedFor.current = null
@@ -204,7 +210,12 @@ export default function AnalysisPage() {
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {hasDataset ? (
+          {/* Resolve the resume first. Rendering the picker underneath a
+              pending restore let people choose a mode for a new task and then
+              get dropped into the previous one when the request landed. */}
+          {restoring ? (
+            <ResumingState />
+          ) : hasDataset ? (
             <>
               <MessageList
                 messages={messages.map((m) => ({ ...m, show_feedback: m.show_feedback && !dismissedFeedback.has(m.id) }))}
@@ -238,6 +249,15 @@ export default function AnalysisPage() {
         images={allImages}
         reports={allReports}
       />
+    </div>
+  )
+}
+
+function ResumingState() {
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-4 text-center">
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-200 border-t-indigo-500" aria-hidden="true" />
+      <p className="mt-4 text-sm text-gray-500">Picking up where you left off…</p>
     </div>
   )
 }
