@@ -61,8 +61,6 @@ async def handle(message: str, session: Session, context: dict[str, Any], recent
     executions: list[dict[str, Any]] = []
     final_text = ""
 
-    hit_step_limit = False
-
     while steps < MAX_STEPS:
         # The model has no visibility into the step budget, so an open-ended ask
         # ("analyse my data") explores straight into the wall. Warn it in time to
@@ -103,14 +101,19 @@ async def handle(message: str, session: Session, context: dict[str, Any], recent
                 messages.append({"role": "tool", "tool_call_id": tc.id, "content": "Code execution failed after multiple attempts. Explain the issue to the user and suggest a simpler alternative."})
 
         steps += 1
-    else:
-        # Loop fell through without the model ever giving a tool-free answer.
-        hit_step_limit = True
 
-    # Running out of steps means the analysis happened but the write-up didn't.
-    # Ask for the write-up with tools withheld rather than handing the user an
-    # apology stapled to a raw code dump.
-    if hit_step_limit:
+    # An explicit chart request that produced no chart is a failed answer, not a
+    # partial one — long wrangling sessions routinely end with the model having
+    # forgotten the plot. Spend one targeted turn on it rather than returning
+    # code and no figure.
+    if _is_plot_request(message) and not all_images:
+        await _retry_chart(messages, sbx, all_images, all_code_blocks, executions)
+
+    # Any empty answer gets a synthesis attempt, not just an exhausted budget:
+    # the model can also stop calling tools while returning no content (a long,
+    # output-heavy session makes this likely), and that path used to fall
+    # straight to the apology below.
+    if not final_text:
         final_text = await _synthesize(messages)
 
     if not final_text:
@@ -168,11 +171,50 @@ _WRAP_UP_NUDGE = (
 )
 
 _SYNTHESIS_PROMPT = (
-    "The tool budget is used up, so no further code can run. Write the final answer "
-    "now from the results above: lead with the direct insight, cite the key numbers "
-    "you found, and state plainly what you could not determine. Do not apologise and "
-    "do not mention steps, budgets, or limits."
+    "No further code can run. Write the final answer now from the results above: "
+    "lead with the direct insight, cite the key numbers you found, and state plainly "
+    "what you could not determine. Do not apologise and do not mention steps, "
+    "budgets, or limits."
 )
+
+_CHART_RETRY_PROMPT = (
+    "You still owe the user the chart they asked for and none was produced. Make one "
+    "execute_code call that draws it from the results you already have. Save with "
+    "exactly: plt.savefig('/home/user/output.png'); plt.close(). Nothing else."
+)
+
+
+async def _retry_chart(messages, sbx, all_images, all_code_blocks, executions) -> None:
+    """Spend one turn recovering a chart the model was asked for but never drew.
+
+    Mutates the accumulator lists in place. Best-effort: any failure leaves the
+    response as it was rather than losing the analysis that did succeed.
+    """
+    try:
+        messages.append({"role": "user", "content": _CHART_RETRY_PROMPT})
+        response = await call_main_model(
+            messages=messages,
+            system_prompt=EXPLORATORY_SYSTEM_PROMPT,
+            tools=[_EXECUTE_CODE_TOOL],
+            tool_choice="auto",
+            temperature=0.1,
+        )
+        msg = response.message
+        messages.append(msg.model_dump(exclude_none=True))
+        if not msg.tool_calls:
+            return
+
+        for tc in msg.tool_calls:
+            if tc.function.name != "execute_code":
+                continue
+            code = json.loads(tc.function.arguments).get("code", "")
+            all_code_blocks.append(code)
+            exec_result = await execute_code(sbx, code)
+            all_images.extend(exec_result.get("images", []))
+            messages.append({"role": "tool", "tool_call_id": tc.id, "content": build_tool_result_string(exec_result)})
+            executions.append({"code": code, "output": _format_execution_output(exec_result)})
+    except Exception:
+        return
 
 
 async def _synthesize(messages: list[dict[str, Any]]) -> str:
@@ -246,7 +288,14 @@ def _extract_mentioned_columns(message, columns):
 
 _INFERENTIAL_RE = re.compile(
     r"\b(regression|regress|predict|predictor|coefficient|r.?squared|\bols\b|\bglm\b|"
-    r"logistic|multivariate|controlling for|adjust(ing)? for|covariat|model (the|exam|score|outcome))\b",
+    r"logistic|multivariate|controlling for|adjust(ing)? for|covariat|model (the|exam|score|outcome)|"
+    # Meta-analysis. The engine has no verified templates for pooling, so these
+    # get hand-written by the model — DerSimonian-Laird, Freeman-Tukey
+    # back-transforms and all — and must be badged as unverified. A pooled
+    # estimate reads far more authoritative than it is.
+    r"meta.?analy\w*|forest plot|funnel plot|pooled|random.?effects?|fixed.?effects?|"
+    r"heterogeneity|i.?squared|tau.?squared|dersimonian|mantel.?haenszel|"
+    r"freeman.?tukey|egger|publication bias|(odds|risk|hazard) ratio)\b",
     re.IGNORECASE,
 )
 

@@ -53,10 +53,10 @@ def _async_return(value):
     return _fn
 
 
-def _run(**kwargs):
+def _run(message="please help me analyze my data", **kwargs):
     return asyncio.run(
         exploratory.handle(
-            message="please help me analyze my data",
+            message=message,
             session=SimpleNamespace(id="s1"),
             context={"recent_turns": [], "mode": "explore"},
             recent_messages=[],
@@ -123,15 +123,75 @@ def test_clean_answer_skips_synthesis(stub_env, monkeypatch):
     assert call_count == 1
 
 
-def test_empty_final_content_is_not_reported_as_a_step_limit(stub_env, monkeypatch):
-    """`content or ""` used to fall through to the max-steps message, blaming
-    the budget for what was really an empty model reply."""
+def test_empty_final_content_still_gets_a_synthesis_attempt(stub_env, monkeypatch):
+    """A model can stop calling tools while returning no content — common in a
+    long, output-heavy session. That used to skip synthesis entirely and fall
+    straight to the apology, which is what a real user hit at 6 of 10 steps."""
+    calls = []
 
     async def fake_model(**kwargs):
+        calls.append(kwargs)
+        if kwargs.get("tools") is None:
+            return SimpleNamespace(message=_FakeMessage(content="Pooled mortality was 10.7%."))
         return SimpleNamespace(message=_FakeMessage(content=""))
 
     monkeypatch.setattr(exploratory, "call_main_model", fake_model)
     result = _run()
 
-    assert "maximum number of steps" not in result["text"]
-    assert result["text"]
+    assert result["text"] == "Pooled mortality was 10.7%."
+    assert calls[-1]["tools"] is None
+    assert "couldn't put together" not in result["text"]
+
+
+def test_missing_chart_on_an_explicit_plot_request_is_retried(stub_env, monkeypatch):
+    """Long wrangling sessions routinely end with the plot forgotten."""
+    sent = []
+
+    async def fake_model(**kwargs):
+        sent.append(kwargs["messages"])
+        return SimpleNamespace(message=_FakeMessage(content="Here is the analysis."))
+
+    monkeypatch.setattr(exploratory, "call_main_model", fake_model)
+    _run(message="produce a forest plot")
+
+    retried = any(
+        m.get("content") == exploratory._CHART_RETRY_PROMPT
+        for convo in sent
+        for m in convo
+        if isinstance(m, dict)
+    )
+    assert retried
+
+
+def test_no_chart_retry_when_no_chart_was_asked_for(stub_env, monkeypatch):
+    """The retry costs an LLM call plus a sandbox run — it must not fire blind."""
+    sent = []
+
+    async def fake_model(**kwargs):
+        sent.append(kwargs["messages"])
+        return SimpleNamespace(message=_FakeMessage(content="Mean age is 42."))
+
+    monkeypatch.setattr(exploratory, "call_main_model", fake_model)
+    _run(message="what is the mean age")
+
+    retried = any(
+        m.get("content") == exploratory._CHART_RETRY_PROMPT
+        for convo in sent
+        for m in convo
+        if isinstance(m, dict)
+    )
+    assert not retried
+
+
+def test_meta_analysis_is_badged_as_unverified(stub_env, monkeypatch):
+    """A pooled estimate reads more authoritative than a hand-written one is."""
+
+    async def fake_model(**kwargs):
+        return SimpleNamespace(message=_FakeMessage(content="Pooled mortality 10.7%."))
+
+    monkeypatch.setattr(exploratory, "call_main_model", fake_model)
+    result = _run(message="produce a forest plot of in-hospital mortality")
+
+    assert result["test_display_name"] == "Exploratory model (not verified)"
+    assert result["engine_verified"] is False
+    assert "not from the verified test library" in result["text"]

@@ -29,10 +29,30 @@ async def execute_code(sbx: Sandbox, code: str) -> dict:
     return result
 
 
+# Tool results are re-sent with every subsequent model call, so an unbounded
+# `print(df.to_string())` compounds: one 40-column dump early in a session is
+# paid for on every later step, crowds out the conversation, and degrades the
+# model's replies to the point of returning nothing. Only the model's copy is
+# capped — the user still sees full output via _format_execution_output.
+_MAX_TOOL_OUTPUT_CHARS = 3000
+
+
+def _truncate_for_model(text: str, limit: int = _MAX_TOOL_OUTPUT_CHARS) -> str:
+    if len(text) <= limit:
+        return text
+    head = text[: limit * 3 // 4]
+    tail = text[-(limit // 4):]
+    dropped = len(text) - len(head) - len(tail)
+    return (
+        f"{head}\n\n[... {dropped:,} characters truncated. Print summaries "
+        f"(shape, head, aggregates) rather than whole tables ...]\n\n{tail}"
+    )
+
+
 def build_tool_result_string(exec_result: dict) -> str:
     parts = []
     if exec_result["stdout"]:
-        parts.append(exec_result["stdout"])
+        parts.append(_truncate_for_model(exec_result["stdout"]))
     if exec_result["stderr"]:
         parts.append("[execution produced an error]")
     if exec_result["images"]:
