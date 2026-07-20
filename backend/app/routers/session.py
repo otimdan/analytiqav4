@@ -15,6 +15,8 @@ from app.profiling.cache import set_cached_profile
 from app.sandbox.manager import get_or_create_sandbox, terminate_sandbox
 from app.orchestrator.hypothesis_watcher import get_first_message
 from app.db.supabase_client import get_client
+from app.ingest.encoding import decode_csv
+from app.ingest.headers import strip_header_bands
 
 router = APIRouter(prefix="/session", tags=["session"])
 
@@ -34,13 +36,24 @@ async def upload_dataset(
         mode = "explore"
 
     content = await file.read()
+    ingest_notes: list[str] = []
     try:
-        csv_text = content.decode("utf-8")
-    except UnicodeDecodeError:
-        try:
-            csv_text = content.decode("latin-1")
-        except Exception:
-            raise HTTPException(status_code=400, detail="Could not read the file. Make sure it's a plain CSV (UTF-8 or Latin-1 encoding).")
+        decoded = decode_csv(content)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Could not read the file. Make sure it's a plain text CSV.")
+
+    if not decoded.certain:
+        ingest_notes.append(
+            f"This file isn't UTF-8, so its encoding was inferred as {decoded.encoding}. "
+            "Check that accented characters, dashes and symbols look right."
+        )
+
+    csv_text, bands_dropped = strip_header_bands(decoded.text)
+    if bands_dropped:
+        ingest_notes.append(
+            f"Dropped {bands_dropped} merged-cell section row{'s' if bands_dropped > 1 else ''} "
+            "above the column names, so the real headers are used."
+        )
 
     lines = [l for l in csv_text.strip().split("\n") if l.strip()]
     if len(lines) < 2:
@@ -75,6 +88,7 @@ async def upload_dataset(
         columns=len(cols),
         column_names=col_names,
         profile_summary={"row_count": profile.get("row_count"), "column_count": profile.get("column_count"), "summary": profile.get("summary", "")},
+        ingest_notes=ingest_notes,
     )
 
 

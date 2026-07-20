@@ -84,6 +84,10 @@ class UploadResponse(BaseModel):
     columns: int
     column_names: list[str]
     profile_summary: dict[str, Any]
+    # What ingestion had to infer or change. Surfaced so a researcher can catch
+    # a bad guess (a non-UTF-8 encoding, a dropped header band) instead of
+    # discovering it in a subgroup analysis three steps later.
+    ingest_notes: list[str] = []
 
 
 class SessionStateResponse(BaseModel):
