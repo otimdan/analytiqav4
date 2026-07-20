@@ -22,7 +22,24 @@ async function apiFetch<T>(path: string, options: RequestInit & { sessionId?: st
   return res.json()
 }
 
+// The backend sleeps on Render's free tier and takes ~40s to wake. Nothing else
+// touches it before the first upload, so that upload would absorb the whole
+// wake-up behind a bare "Analysing dataset…". Firing this on mount moves the
+// wake-up into the time the user spends picking a mode and a file.
+// Deliberately fire-and-forget: a failure here must never surface or block.
+export function warmBackend(): void {
+  fetch(`${BASE_URL}/health`).catch(() => {})
+}
+
+// Mirrors the backend's MAX_UPLOAD_MB default so an oversized file fails
+// instantly instead of after a long upload. The backend stays authoritative —
+// if it is configured lower, its 413 detail is what the user sees.
+const MAX_UPLOAD_MB = 25
+
 export async function uploadDataset(file: File, mode: TaskMode = "explore"): Promise<UploadResponse> {
+  if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+    throw new Error(`That file is larger than the ${MAX_UPLOAD_MB} MB limit. Try a smaller extract of the dataset.`)
+  }
   const form = new FormData()
   form.append("file", file)
   form.append("mode", mode)

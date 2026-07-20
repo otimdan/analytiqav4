@@ -2,7 +2,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react"
 import type { Message, StreamChunk, ChartImage, TaskMode } from "@/lib/types"
 import { deriveGuidedProgress } from "@/lib/types"
-import { getMessages } from "@/lib/api"
+import { getMessages, warmBackend } from "@/lib/api"
 import { useSession } from "@/hooks/useSession"
 import { useTasks } from "@/hooks/useTasks"
 import { useGuidance } from "@/hooks/useGuidance"
@@ -35,6 +35,9 @@ export default function AnalysisPage() {
   const [chosenMode, setChosenMode] = useState<TaskMode | null>(null)
   const historyLoadedFor = useRef<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Start waking the sleeping backend now, not at first upload (see warmBackend).
+  useEffect(() => { warmBackend() }, [])
 
   // Returning from Dodo checkout: refresh the plan/usage and clean the URL.
   // (Webhook is the source of truth; this just pulls the fresh state sooner.)
