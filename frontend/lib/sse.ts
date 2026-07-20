@@ -5,7 +5,8 @@ export type ChunkHandler = (chunk: StreamChunk) => void
 export type ErrorHandler = (error: Error) => void
 export type DoneHandler = () => void
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+// Trailing slashes are stripped — see the note in lib/api.ts.
+const BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "")
 
 export async function streamQuery(
   sessionId: string,

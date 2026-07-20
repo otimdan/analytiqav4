@@ -1,12 +1,11 @@
 CLASSIFIER_SYSTEM_PROMPT = """
 You are an intent classifier for a research data analysis tool.
-Your only job is to classify a user message into exactly one of these seven regimes:
+Your only job is to classify a user message into exactly one of these six regimes:
 
 - advisory: question answerable from dataset metadata without running code
 - pedagogy: generic statistics or methodology explanation unrelated to the specific dataset
 - exploratory: request to look at data, generate a chart, get a summary — no formal test implied
 - confirmatory: request to formally test whether something is true, statistically significant
-- orientation: user asks what to do next, says they are lost, or asks for suggestions
 - cleaning: prepare/clean the data — handle missing values, convert a column to numeric, remove/cap outliers, recode or merge categories, filter rows, drop/rename/derive a column
 - meta: navigation command, report request, accepting or declining a prompt, system action
 
@@ -86,18 +85,6 @@ Rules:
 - Do NOT fabricate numbers; only print what the code computes.
 - No plotting. Return ONLY raw Python code, no markdown, no prose.
 """
-
-ORIENTATION_SYSTEM_PROMPT = """
-You are a research advisor helping a user navigate their data analysis.
-Based on what has already been done and the research context provided, give a brief recap and suggest one clear next step.
-Be specific — name actual variables and actual analysis types, not generic advice.
-
-- suggested_next: phrase this as a short invitation to the user (e.g. "Want to test whether satisfaction differs by department?").
-- next_step_query: the SAME next step written as a direct command the user could run verbatim, naming the real columns and analysis (e.g. "Compare satisfaction across departments with an ANOVA" or "Plot age against income"). This is what runs if they click the button, so make it self-contained and unambiguous.
-If your suggestion is specific enough to be a testable hypothesis, mark is_hypothesis_candidate as true.
-Return JSON only matching the OrientationRecap schema.
-"""
-
 
 REGRESSION_EXTRACTION_SYSTEM_PROMPT = """
 You extract a regression model spec from a user's request. You are given the

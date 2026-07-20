@@ -16,7 +16,7 @@ from app.orchestrator.hypothesis_watcher import check_message_for_hypothesis
 from app.orchestrator.context_builder import build_context
 from app.orchestrator.validator import validate_output, get_fallback_message
 
-from app.regimes import advisory, pedagogy, exploratory, confirmatory, orientation, meta, cleaning
+from app.regimes import advisory, pedagogy, exploratory, confirmatory, meta, cleaning
 from app.logging_config import logger
 from app.observability import capture_event
 
@@ -102,7 +102,7 @@ async def process_message(
     # metering for the new regime — instead of dropping it (which previously
     # produced a blank, unsaved reply because route_to was never consumed).
     route_to = raw_result.get("route_to")
-    if route_to in ("advisory", "pedagogy", "exploratory", "confirmatory", "orientation") and route_to != regime:
+    if route_to in ("advisory", "pedagogy", "exploratory", "confirmatory") and route_to != regime:
         regime = route_to
         metered = regime in ["exploratory", "confirmatory"]
         if metered and updated_session.user_id:
@@ -207,8 +207,6 @@ async def _dispatch(regime, message, session, context, recent_messages) -> dict[
         return await exploratory.handle(message, session, context, recent_messages)
     if regime == "confirmatory":
         return await confirmatory.handle(message, session, context, recent_messages)
-    if regime == "orientation":
-        return await orientation.handle(session, context)
     if regime == "cleaning":
         return await cleaning.handle(message, session, context)
     if regime == "meta":
