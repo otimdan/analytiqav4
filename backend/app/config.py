@@ -40,6 +40,18 @@ FEEDBACK_EVERY_N_TURNS = int(os.getenv("FEEDBACK_EVERY_N_TURNS", "3"))
 # https://your-app.vercel.app, at launch).
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",") if o.strip()]
 
+# ── Uploads ───────────────────────────────────────────────────
+# Measured: the ingest chain peaks at ~3.6x the file size (raw bytes, decoded
+# text and the split line list are alive at once), on a ~115 MB app baseline. So
+# 25 MB costs ~90 MB peak -> ~205 MB total, leaving a 512 MB instance room for
+# several concurrent uploads. Lower this (env only, no code change) if memory
+# pressure shows up; raise it once the host has more headroom.
+# 25 MB is ~300k rows of a typical 12-column dataset — past any realistic study.
+MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "25"))
+MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
+# One wording for both rejection points (the middleware and the upload handler).
+MAX_UPLOAD_MESSAGE = f"That file is larger than the {MAX_UPLOAD_MB} MB limit. Try a smaller extract of the dataset."
+
 # ── Rate limits (per user, per minute) ────────────────────────
 QUERY_RATE_PER_MIN = int(os.getenv("QUERY_RATE_PER_MIN", "20"))
 UPLOAD_RATE_PER_MIN = int(os.getenv("UPLOAD_RATE_PER_MIN", "10"))

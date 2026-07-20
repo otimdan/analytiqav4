@@ -17,6 +17,7 @@ from app.orchestrator.hypothesis_watcher import get_first_message
 from app.db.supabase_client import get_client
 from app.ingest.encoding import decode_csv
 from app.ingest.headers import strip_header_bands
+from app.config import MAX_UPLOAD_BYTES, MAX_UPLOAD_MESSAGE
 
 router = APIRouter(prefix="/session", tags=["session"])
 
@@ -35,7 +36,17 @@ async def upload_dataset(
     if mode not in ("explore", "guided"):
         mode = "explore"
 
+    # Reject before read(): read() pulls the whole upload into memory, and the
+    # decoded text plus the line list below are alive at the same time, so an
+    # unbounded file can OOM the web process. Starlette leaves .size unset for
+    # some clients, hence the second check against the bytes actually read.
+    if file.size is not None and file.size > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=MAX_UPLOAD_MESSAGE)
+
     content = await file.read()
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=MAX_UPLOAD_MESSAGE)
+
     ingest_notes: list[str] = []
     try:
         decoded = decode_csv(content)

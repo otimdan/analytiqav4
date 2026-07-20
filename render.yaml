@@ -19,6 +19,12 @@ services:
       # development for now; bump to production at real launch.)
       - key: SENTRY_ENVIRONMENT
         value: development
+      # Upload cap. Ingest peaks at ~3.6x the file size on a ~115 MB baseline, so
+      # 25 MB (~205 MB total) fits this 512 MB plan comfortably. Lower it
+      # here if memory pressure shows up (no code change needed); raise it with
+      # the plan. Keep in sync with MAX_UPLOAD_MB in frontend/lib/api.ts.
+      - key: MAX_UPLOAD_MB
+        value: 25
       - key: POSTHOG_HOST
         value: https://us.i.posthog.com
       - key: DODO_PAYMENTS_ENVIRONMENT

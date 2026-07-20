@@ -7,6 +7,7 @@ from app.routers import session, query, feedback, health, artifacts, account, bi
 from app.logging_config import setup_logging
 from app.config import ALLOWED_ORIGINS
 from app.observability import init_observability, shutdown_observability
+from app.request_limits import BodySizeLimitMiddleware
 
 import app.config  # noqa: F401 — triggers startup validation
 
@@ -29,6 +30,12 @@ def create_app() -> FastAPI:
         description="AI-powered research data analysis platform for undergraduate and postgraduate researchers.",
         lifespan=_lifespan,
     )
+
+    # Middleware order: the LAST one added is the OUTERMOST. The body-size limit
+    # is added first so CORS ends up wrapping it — otherwise its 413 would go out
+    # without CORS headers and the browser would surface an opaque network error
+    # instead of the message.
+    application.add_middleware(BodySizeLimitMiddleware)
 
     application.add_middleware(
         CORSMiddleware,

@@ -17,6 +17,7 @@ while the row under it is mostly full.
 
 import csv
 import io
+from itertools import islice
 
 # A band row is overwhelmingly empty — the label sits in the merged cell and the
 # rest of the span is blank. Real headers occasionally have one or two blank
@@ -28,6 +29,25 @@ _HEADER_MAX_EMPTY_RATIO = 0.15
 _MAX_SCAN_ROWS = 3
 
 
+def _iter_lines(text: str):
+    """Yield lines lazily, without copying the whole document.
+
+    io.StringIO(text) buffers a 4-byte-per-character copy up front — 4x the file
+    size even when only the first few rows are read. csv.reader takes any iterable
+    of lines (this is what it does with a file object), and pulls another line
+    itself when a quoted field spans one, so quoting stays correct.
+    """
+    start = 0
+    length = len(text)
+    while start < length:
+        end = text.find("\n", start)
+        if end == -1:
+            yield text[start:]
+            return
+        yield text[start : end + 1]
+        start = end + 1
+
+
 def _empty_ratio(row: list[str]) -> float:
     if not row:
         return 1.0
@@ -37,7 +57,11 @@ def _empty_ratio(row: list[str]) -> float:
 def detect_header_row(text: str) -> int:
     """Index of the row holding the real column names. 0 when there is no band."""
     try:
-        rows = list(csv.reader(io.StringIO(text)))[: _MAX_SCAN_ROWS + 1]
+        # islice stops the reader after the rows we scan, and _iter_lines keeps it
+        # from copying the document to get there. Materialising every row and then
+        # slicing cost ~13x the file size in short-lived str objects on a large
+        # upload — the dominant term in the handler's peak memory.
+        rows = list(islice(csv.reader(_iter_lines(text)), _MAX_SCAN_ROWS + 1))
     except csv.Error:
         return 0
 
@@ -60,7 +84,14 @@ def strip_header_bands(text: str) -> tuple[str, int]:
     if header_row == 0:
         return text, 0
 
-    rows = list(csv.reader(io.StringIO(text)))
+    # detect_header_row only reads the top of the file, so a malformed row deeper
+    # down surfaces here instead. Leave the file untouched rather than 500 — the
+    # same outcome the caller gets when no band is found.
+    try:
+        rows = list(csv.reader(_iter_lines(text)))
+    except csv.Error:
+        return text, 0
+
     out = io.StringIO()
     csv.writer(out, lineterminator="\n").writerows(rows[header_row:])
     return out.getvalue(), header_row
