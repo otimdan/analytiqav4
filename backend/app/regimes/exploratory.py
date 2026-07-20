@@ -61,7 +61,16 @@ async def handle(message: str, session: Session, context: dict[str, Any], recent
     executions: list[dict[str, Any]] = []
     final_text = ""
 
+    hit_step_limit = False
+
     while steps < MAX_STEPS:
+        # The model has no visibility into the step budget, so an open-ended ask
+        # ("analyse my data") explores straight into the wall. Warn it in time to
+        # land the answer itself, which is cheaper and better than synthesising
+        # for it after the fact.
+        if steps == MAX_STEPS - 2:
+            messages.append({"role": "user", "content": _WRAP_UP_NUDGE})
+
         response = await call_main_model(messages=messages, system_prompt=EXPLORATORY_SYSTEM_PROMPT, tools=[_EXECUTE_CODE_TOOL], tool_choice="auto", temperature=0.1)
         msg = response.message
         messages.append(msg.model_dump(exclude_none=True))
@@ -94,9 +103,18 @@ async def handle(message: str, session: Session, context: dict[str, Any], recent
                 messages.append({"role": "tool", "tool_call_id": tc.id, "content": "Code execution failed after multiple attempts. Explain the issue to the user and suggest a simpler alternative."})
 
         steps += 1
+    else:
+        # Loop fell through without the model ever giving a tool-free answer.
+        hit_step_limit = True
+
+    # Running out of steps means the analysis happened but the write-up didn't.
+    # Ask for the write-up with tools withheld rather than handing the user an
+    # apology stapled to a raw code dump.
+    if hit_step_limit:
+        final_text = await _synthesize(messages)
 
     if not final_text:
-        final_text = "I reached the maximum number of steps without a clean result. Here's what I found so far."
+        final_text = "I ran the analysis but couldn't put together a written summary. The code and output below show what I found."
 
     code_used = "\n\n".join(all_code_blocks) if all_code_blocks else None
     stage = "visualisation" if all_images else "descriptive"
@@ -142,6 +160,38 @@ async def handle(message: str, session: Session, context: dict[str, Any], recent
         )
 
     return {"text": final_text, "images": all_images, "artifact_content": artifact_content, "artifact_type": artifact_type, "stage": stage, "variables_involved": variables, "code_used": code_used, "executions": executions, "chart_caption": chart_caption, "suggested_next": suggested_next, "next_action": next_action, "nudge_style": nudge_style, "engine_verified": False if verification else None, "test_display_name": verification, "is_hypothesis_candidate": False}
+
+
+_WRAP_UP_NUDGE = (
+    "You have two tool calls left. Stop exploring and write your final answer now "
+    "from the results you already have."
+)
+
+_SYNTHESIS_PROMPT = (
+    "The tool budget is used up, so no further code can run. Write the final answer "
+    "now from the results above: lead with the direct insight, cite the key numbers "
+    "you found, and state plainly what you could not determine. Do not apologise and "
+    "do not mention steps, budgets, or limits."
+)
+
+
+async def _synthesize(messages: list[dict[str, Any]]) -> str:
+    """Force a written answer out of the model once the step budget is spent.
+
+    Tools are withheld so the model cannot start another round of exploration.
+    A failure here is not worth losing the whole response over — the caller
+    falls back to a plain message when this returns empty.
+    """
+    try:
+        response = await call_main_model(
+            messages=[*messages, {"role": "user", "content": _SYNTHESIS_PROMPT}],
+            system_prompt=EXPLORATORY_SYSTEM_PROMPT,
+            tools=None,
+            temperature=0.1,
+        )
+        return response.message.content or ""
+    except Exception:
+        return ""
 
 
 def _format_execution_output(exec_result: dict) -> str:
