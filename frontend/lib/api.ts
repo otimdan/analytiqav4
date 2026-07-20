@@ -1,7 +1,9 @@
 import type { UploadResponse, SessionState, FeedbackRequest, Artifact, MessageHistoryItem, UsageSummary, Plan, TaskSummary, TaskMode } from "./types"
 import { authHeader } from "./supabase/token"
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+// Trailing slashes are stripped: paths below all start with "/", and a base URL
+// ending in "/" would produce "//session/upload", which FastAPI 404s.
+const BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/+$/, "")
 
 async function apiFetch<T>(path: string, options: RequestInit & { sessionId?: string } = {}): Promise<T> {
   const { sessionId, ...fetchOptions } = options
