@@ -13,6 +13,16 @@ warnings.filterwarnings('ignore')
 df = pd.read_csv('/home/user/data.csv')
 profile = {"row_count": int(len(df)), "column_count": int(len(df.columns)), "columns": {}}
 
+# Research exports rarely leave a cell empty; they write a not-reported marker.
+# pandas counts those as present, so a sheet that is 60% unreported profiles as
+# "0% missing" — which then justifies analyses the data cannot support. Counted
+# here as missing for reporting only; the underlying values are left untouched.
+MISSING_SENTINELS = {
+    'nr', 'na', 'n/a', 'n.a.', 'nan', 'none', 'nil', 'null', 'missing',
+    'unknown', 'not reported', 'not stated', 'not available', 'tbd',
+    '-', '--', '---', '.', '?', '#n/a',
+}
+
 for col in df.columns:
     series = df[col]
     col_profile = {}
@@ -22,9 +32,24 @@ for col in df.columns:
     # category as text/categorical. Without this, string columns on newer pandas
     # (dtype 'str') are neither numeric nor object and fall through to unknown.
     stringy = ('object' in dtype_str) or ('str' in dtype_str) or ('categor' in dtype_str)
-    null_count = int(series.isnull().sum())
+    blank_count = int(series.isnull().sum())
+    sentinel_count = 0
+    sentinels_seen = []
+    if stringy:
+        normalised = series.dropna().astype(str).str.strip().str.lower()
+        hits = normalised.isin(MISSING_SENTINELS)
+        sentinel_count = int(hits.sum())
+        if sentinel_count:
+            sentinels_seen = sorted(set(normalised[hits].tolist()))[:5]
+    null_count = blank_count + sentinel_count
     col_profile["null_count"] = null_count
     col_profile["null_pct"] = round(null_count / len(df) * 100, 2)
+    # Split out so the distinction stays visible: an empty cell and a written
+    # "NR" mean the same thing analytically but not editorially.
+    col_profile["blank_count"] = blank_count
+    col_profile["sentinel_missing_count"] = sentinel_count
+    if sentinels_seen:
+        col_profile["missing_sentinels"] = sentinels_seen
     unique_count = int(series.nunique())
     col_profile["unique_count"] = unique_count
     col_profile["uniqueness_ratio"] = round(unique_count / max(len(df), 1), 4)

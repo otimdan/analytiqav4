@@ -15,7 +15,11 @@ async def handle(message: str, session: Session, context: dict[str, Any]) -> dic
         return await _handle_method_evaluation(message, session, context)
 
     context_block = format_context_for_prompt(context)
-    messages = [{"role": "user", "content": f"{context_block}\n\nQuestion: {message}"}]
+    # Prior turns are replayed so a follow-up like "explain the above results"
+    # has something to refer to. format_context_for_prompt carries the profile
+    # and artifacts but not the conversation, which is why such questions used
+    # to be answered with a schema dump.
+    messages = [*context.get("recent_turns", []), {"role": "user", "content": f"{context_block}\n\nQuestion: {message}"}]
     response = await call_main_model(messages=messages, system_prompt=ADVISORY_SYSTEM_PROMPT, tools=None, temperature=0.1, model=FIREWORKS_MODEL_CHAT)
     return _empty_result(text=response.message.content or "", stage="descriptive")
 

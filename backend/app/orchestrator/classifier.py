@@ -9,7 +9,23 @@ _RULE_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\b(generate|create|make|give me|produce|write)\b.{0,30}\b(report|summary|writeup|write.up|document)\b", re.IGNORECASE), "meta"),
     (re.compile(r"^(go back|undo|start over|reset|clear|restart|redo|previous step|back to)\b", re.IGNORECASE), "meta"),
     (re.compile(r"^(yes[,.]?\s*(track it|do it|go ahead|proceed|let'?s do it)|no[,.]?\s*(just answer|don'?t track|skip))\b", re.IGNORECASE), "meta"),
-    (re.compile(r"\b(what is|what are|explain|define|how does|what does .+ mean|tell me about)\b.{0,40}\b(p.value|t.test|anova|chi.square|regression|correlation|standard deviation|mean|median|hypothesis test|confidence interval|effect size|statistical significance|mann.whitney|kruskal|shapiro|normality|variance|null hypothesis)\b", re.IGNORECASE), "pedagogy"),
+    # Follow-ups that point back at the previous answer. These matched no rule,
+    # so they fell to the LLM classifier — which sees only a truncated slice of
+    # the last reply and, with no visible context, picks advisory. Advisory then
+    # answered "explain the above results" with a dataset schema dump. Routed
+    # deterministically instead, and advisory now reads the conversation.
+    #
+    # These sit BEFORE pedagogy deliberately: "mean" is in the statistics-term
+    # list below (as in arithmetic mean), so "what does this mean" would
+    # otherwise be answered as a lesson on averages. Requiring a pronoun keeps
+    # "what does a p-value mean" out of here and with pedagogy where it belongs.
+    (re.compile(r"\b(explain|interpret|unpack|walk me through|summari[sz]e)\b[^.?!]{0,30}\b(the )?(above|previous|last|these|those|that|this|it|result|results|output|finding|findings|analysis|numbers|table|chart|plot)\b", re.IGNORECASE), "advisory"),
+    (re.compile(r"^(explain|interpret)( (it|this|that|these|those|them))?[.?!]?$", re.IGNORECASE), "advisory"),
+    (re.compile(r"^what (do|does) (it|this|that|these|those)\b[^.?!]{0,25}\bmean", re.IGNORECASE), "advisory"),
+    # "what does" rather than "what does .+ mean": the greedy .+ swallowed the
+    # statistics term, so the trailing term this pattern requires was never
+    # there and "what does a p-value mean" fell through to the LLM classifier.
+    (re.compile(r"\b(what is|what are|explain|define|how does|what does|tell me about)\b.{0,40}\b(p.value|t.test|anova|chi.square|regression|correlation|standard deviation|mean|median|hypothesis test|confidence interval|effect size|statistical significance|mann.whitney|kruskal|shapiro|normality|variance|null hypothesis)\b", re.IGNORECASE), "pedagogy"),
     (re.compile(r"\b(how many (rows|columns|observations|variables|missing|null)|what columns|what variables|column names|variable names|dataset size|how much missing|missingness|sample size)\b", re.IGNORECASE), "advisory"),
     # Data cleaning / preparation (deterministic transforms).
     (re.compile(r"\b(remove|drop|delete|handle|fill|impute|replace|deal with)\b.{0,30}\b(missing|nulls?|nans?|blank|empty)\b", re.IGNORECASE), "cleaning"),
@@ -73,7 +89,9 @@ async def classify_intent(message: str, recent_messages: list[Message], has_pend
     recent_ai_message = ""
     for msg in reversed(recent_messages):
         if msg.role == "assistant":
-            recent_ai_message = msg.content[:200]
+            # 200 chars of a statistical write-up is preamble. The classifier
+            # was routing context-dependent follow-ups blind because of it.
+            recent_ai_message = msg.content[:1200]
             break
 
     result = await call_classifier_model(message=message, recent_context=recent_ai_message, system_prompt=CLASSIFIER_SYSTEM_PROMPT)
