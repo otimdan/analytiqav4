@@ -21,7 +21,6 @@ _RULE_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\b(filter|keep|subset|exclude)\b.{0,25}\b(rows?|records?|observations?)\b", re.IGNORECASE), "cleaning"),
     (re.compile(r"\b(create|add|derive|compute|make)\b.{0,15}\b(a )?(new )?(column|variable|feature)\b", re.IGNORECASE), "cleaning"),
     (re.compile(r"\b(clean|tidy up|prepare|preprocess|wrangle)\b.{0,20}\b(the )?(data|dataset|column|values?)\b", re.IGNORECASE), "cleaning"),
-    (re.compile(r"\b(what (should|do) i (do|try|check|look at) next|i don'?t know what to do|i'?m (not sure|stuck|lost|confused) (what|where|how)|help me (do|with|start|proceed|analyse|analyze)|where do i (go|start|begin) (from here|next)|what'?s (the )?next step|suggest(ion)?s? (on )?what|guide me)\b", re.IGNORECASE), "orientation"),
     # Explicit "run this test" requests must route to confirmatory DETERMINISTICALLY
     # — not on the LLM classifier's whim (which once sent "Run the statistical
     # test on X and Y" to exploratory, bypassing the deterministic engine and the
@@ -38,6 +37,8 @@ _RULE_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"^(thanks?|thank you|ok(ay)?|great|nice|perfect|i like (that|it)|good|cool|awesome|sawa|webale|asante|nzuri|poa)[!.]?\s*$", re.IGNORECASE), "meta"),
     (re.compile(r"\b(you'?re wrong|that'?s (not right|incorrect|wrong)|i (don'?t|do not) (think|believe) (that'?s|this is) (right|correct)|that doesn'?t (seem|look|sound) right|are you sure|i disagree)\b", re.IGNORECASE), "meta"),
 ]
+
+_VALID_REGIMES = {"advisory", "pedagogy", "exploratory", "confirmatory", "cleaning", "meta"}
 
 _AMBIGUOUS_PATTERNS: list[re.Pattern] = [
     re.compile(r"^(is there (a )?(difference|relationship|association|correlation|link|connection)|do .+ (differ|vary|change)|compare .+ (between|across)|how does .+ (relate|compare))\b", re.IGNORECASE),
@@ -75,7 +76,15 @@ async def classify_intent(message: str, recent_messages: list[Message], has_pend
             recent_ai_message = msg.content[:200]
             break
 
-    return await call_classifier_model(message=message, recent_context=recent_ai_message, system_prompt=CLASSIFIER_SYSTEM_PROMPT)
+    result = await call_classifier_model(message=message, recent_context=recent_ai_message, system_prompt=CLASSIFIER_SYSTEM_PROMPT)
+
+    # `regime` is an unconstrained string, so the model can still name a regime
+    # that no longer exists (it was trained-adjacent to "orientation", now
+    # removed) or invent one. Fall back to exploratory — explore mode is
+    # free-form — rather than _dispatch's "I wasn't sure how to handle that".
+    if result.regime not in _VALID_REGIMES:
+        result.regime = "exploratory"
+    return result
 
 
 def is_off_topic(message: str) -> bool:

@@ -1,4 +1,3 @@
-import re
 from typing import Any
 from app.db.models import Session, Message
 from app.db.sessions import store_hypothesis
@@ -70,18 +69,6 @@ async def handle_decline(session_id: str) -> None:
         await run_db(decline_candidate, str(candidate.id))
 
 
-def check_orientation_trigger(message: str) -> bool:
-    return _sounds_like_help_request(message)
-
-
-def _sounds_like_help_request(message: str) -> bool:
-    help_patterns = [
-        r"\bhelp me\b", r"\bi don'?t know what to do\b",
-        r"\bi'?m (not sure|stuck|lost)\b", r"\bwhat (should|do) i do\b",
-        r"\bguide me\b", r"\bjust exploring\b", r"\bnot sure (yet|what)\b",
-    ]
-    message_lower = message.lower()
-    return any(re.search(p, message_lower) for p in help_patterns)
 
 
 def _build_column_mismatch_prompt(hypothesis_text: str, unmatched: list[str], available_columns: list[str]) -> str:

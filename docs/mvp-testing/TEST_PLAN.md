@@ -16,7 +16,7 @@ Baked-in truths in `students_survey.csv` (so tests find real effects):
 `study_hours_per_week` ↑ `exam_score`, `attendance_rate` ↑ `exam_score`,
 `stress_level=High` ↓ `exam_score`, Female slightly higher, part-time job slightly lower.
 
-Legend for regimes: **orientation** (what's here / what next), **advisory**
+Legend for regimes: **advisory**
 (which test should I use), **pedagogy** (explain a concept), **exploratory**
 (quick look + charts), **confirmatory** (formal stat test), **meta** (routing/
 guardrails).
@@ -28,7 +28,7 @@ guardrails).
 | # | You type | Expected regime | Expected behavior | Validates |
 |---|---|---|---|---|
 | A1 | *(just upload)* | meta | Greeting names ~90 rows / 9 cols and asks what you want to find out | Upload, profiling, first message |
-| A2 | `What's in this dataset?` | orientation | Summarizes columns + types; may suggest a next step with a **Run it** button | Orientation, profile summary |
+| A2 | `What's in this dataset?` | advisory | Summarizes columns + types from the profile | Profile summary |
 | A3 | `How many rows and columns are there?` | advisory (shortcut) | Answers **instantly from the profile**, no sandbox run | `_check_execution_needed` fast path |
 | A4 | `What is a p-value?` | pedagogy | Plain-language explanation, **no** code/chart | Pedagogy routing, no needless execution |
 | A5 | `I want to see how study hours relate to exam score` | exploratory | Runs code, returns a **scatter plot** (+ maybe correlation), collapsible code block | Chart-first flow, code execution, artifact logged |
