@@ -85,9 +85,9 @@ def _pair(a: str, b: str, profile: dict[str, Any]) -> Optional[ChartRecommendati
 
     # numeric x categorical -> box plot of the numeric grouped by the category
     if ta in _NUMERICISH and tb == CATEGORICAL:
-        return _box(measure=a, group=b)
+        return _box(measure=a, group=b, profile=profile)
     if tb in _NUMERICISH and ta == CATEGORICAL:
-        return _box(measure=b, group=a)
+        return _box(measure=b, group=a, profile=profile)
 
     # categorical x categorical -> grouped bar of counts
     if ta == CATEGORICAL and tb == CATEGORICAL:
@@ -120,10 +120,52 @@ def _line(time_col: str, measure: str) -> ChartRecommendation:
     )
 
 
-def _box(measure: str, group: str) -> ChartRecommendation:
+# Ordinal vocabularies that pandas would otherwise sort alphabetically. A stress
+# chart came out High, Low, Medium while its narration described "a clear
+# downward trend as stress increases" — the text and the picture disagreed, and
+# the picture is what a reader trusts.
+_ORDINAL_SEQUENCES: list[list[str]] = [
+    ["low", "medium", "high"],
+    ["low", "moderate", "high"],
+    ["low", "mid", "high"],
+    ["small", "medium", "large"],
+    ["mild", "moderate", "severe"],
+    ["none", "mild", "moderate", "severe"],
+    ["never", "rarely", "sometimes", "often", "always"],
+    ["strongly disagree", "disagree", "neutral", "agree", "strongly agree"],
+    ["very poor", "poor", "fair", "good", "very good", "excellent"],
+    ["poor", "fair", "good", "excellent"],
+    ["primary", "secondary", "tertiary"],
+    ["first", "second", "third", "fourth"],
+    ["daily", "weekly", "monthly", "yearly"],
+]
+
+
+def ordinal_order(group: str, profile: dict[str, Any]) -> Optional[list[str]]:
+    """The category values of `group` in their meaningful order, if recognised.
+
+    Returns the values as they are spelled in the data, so the directive can name
+    them verbatim. None when the column is a plain unordered category.
+    """
+    values = list((profile.get("columns", {}).get(group, {}).get("top_values") or {}).keys())
+    if len(values) < 3:
+        return None
+    by_lower = {str(v).strip().lower(): v for v in values}
+    for sequence in _ORDINAL_SEQUENCES:
+        if set(by_lower) <= set(sequence):
+            return [by_lower[s] for s in sequence if s in by_lower]
+    return None
+
+
+def _box(measure: str, group: str, profile: Optional[dict[str, Any]] = None) -> ChartRecommendation:
+    order = ordinal_order(group, profile) if profile else None
+    order_directive = (
+        f" Order the `{group}` categories on the x-axis as {order} — NOT alphabetically."
+        if order else ""
+    )
     return ChartRecommendation(
         "box", [measure, group],
         f"{measure} by {group}",
         f"Plot a box plot of `{measure}` grouped by `{group}` so the distributions can be compared side by side. "
-        f"Put `{group}` on the x-axis and `{measure}` on the y-axis.",
+        f"Put `{group}` on the x-axis and `{measure}` on the y-axis.{order_directive}",
     )
