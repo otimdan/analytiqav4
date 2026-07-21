@@ -69,12 +69,17 @@ def _pair(a: str, b: str, profile: dict[str, Any]) -> Optional[ChartRecommendati
     if tb == DATETIME and ta in _NUMERICISH:
         return _line(b, a)
 
-    # numeric x numeric -> scatter
+    # numeric x numeric -> scatter. "Y vs X" is the convention, so the
+    # first-named column goes on the Y axis — matching _box ("measure by group")
+    # and _line ("measure over time") below. This directive used to say "{a} vs
+    # {b}" while putting `a` on the X axis, so the title and the axes contradicted
+    # each other: a chart titled "exam_score vs study_hours_per_week" plotted
+    # exam_score horizontally, reading as though study hours were the outcome.
     if ta in _NUMERICISH and tb in _NUMERICISH:
         return ChartRecommendation(
             "scatter", [a, b],
             f"{a} vs {b}",
-            f"Plot a scatter plot with `{a}` on the x-axis and `{b}` on the y-axis. "
+            f"Plot a scatter plot with `{b}` on the x-axis and `{a}` on the y-axis. "
             f"Add a light trend line if a relationship is visible. Title it '{a} vs {b}'.",
         )
 

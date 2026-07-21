@@ -156,7 +156,7 @@ async def handle(message: str, session: Session, context: dict[str, Any], recent
     # it's outside the verified test library — badge it honestly so a regression
     # result doesn't read like a verified test. append the caveat to the text.
     verification = None
-    if _is_inferential_request(message):
+    if _is_inferential_request(message) or _code_did_inference(all_code_blocks):
         verification = "Exploratory model (not verified)"
         final_text += (
             "\n\n> ⚠️ This is an **exploratory analysis**, not from the verified test library — "
@@ -305,3 +305,20 @@ _INFERENTIAL_RE = re.compile(
 
 def _is_inferential_request(message: str) -> bool:
     return bool(_INFERENTIAL_RE.search(message))
+
+
+# Functions that yield a p-value or fit a model. Asking for "how study hours
+# relate to exam score" names nothing inferential, but the model answered it
+# with linregress + pearsonr and reported r, R², a coefficient, SE and
+# p < 0.0001 — unbadged, because the badge only ever read the request. What the
+# code actually ran is the honest signal.
+_INFERENTIAL_CALL_RE = re.compile(
+    r"\b(pearsonr|spearmanr|kendalltau|linregress|ttest_\w+|f_oneway|mannwhitneyu|"
+    r"kruskal|wilcoxon|chi2_contingency|fisher_exact|shapiro|levene|bartlett|"
+    r"anderson|normaltest|OLS|GLM|Logit|LinearRegression|LogisticRegression|"
+    r"RandomForest\w*|statsmodels)\b",
+)
+
+
+def _code_did_inference(code_blocks: list[str]) -> bool:
+    return any(_INFERENTIAL_CALL_RE.search(block or "") for block in code_blocks)
