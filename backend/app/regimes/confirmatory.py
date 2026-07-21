@@ -14,6 +14,7 @@ from app.stats_engine.test_selector import (
     resolve_pair, decide_test, resolve_requested_test,
     is_multivariate_request, get_multivariate_fallback_message, explain_test_choice,
 )
+from app.stats_engine.column_matcher import match_columns
 from app.stats_engine.registry import get_test, render_template, render_posthoc, posthoc_label
 from app.stats_engine.regression import resolve_model, render_regression
 from app.stats_engine.assumption_checks import run_live_checks, PASS, FAIL, NOT_APPLICABLE
@@ -532,7 +533,7 @@ def _first_error_line(stderr: str) -> str:
 
 def _extract_variables(message, profile):
     columns = list(profile.get("columns", {}).keys())
-    return [col for col in columns if col.lower() in message.lower()][:2]
+    return match_columns(message, columns, profile)[:2]
 
 
 def resolve_pair_variables(message, profile, focus_variables):

@@ -62,7 +62,11 @@ async def process_message(
     needs_disambiguation = classification.needs_disambiguation
 
     if needs_disambiguation:
-        yield {"type": "disambiguation", "content": None, "prompt": {"question": "Would you like a quick look or a formal test?", "options": ["Quick look", "Run a test"]}, "regime": "meta", "show_feedback": False}
+        # The question travels with the prompt: the answer arrives as a fresh
+        # message, and "Run a test" on its own names no columns, so confirmatory
+        # had nothing to work with and asked which two to compare — for a
+        # question that had already named them.
+        yield {"type": "disambiguation", "content": None, "prompt": {"question": "Would you like a quick look or a formal test?", "options": ["Quick look", "Run a test"], "original_message": message}, "regime": "meta", "show_feedback": False}
         return
 
     if regime in ["exploratory", "confirmatory"] and not updated_session.dataset_csv:

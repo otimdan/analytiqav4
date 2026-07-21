@@ -223,7 +223,12 @@ export default function AnalysisPage() {
               <MessageList
                 messages={messages.map((m) => ({ ...m, show_feedback: m.show_feedback && !dismissedFeedback.has(m.id) }))}
                 sessionId={sessionId} isStreaming={isStreaming}
-                onOptionSelect={(_, opt) => handleSend(opt)}
+                onOptionSelect={(id, opt) => {
+                  // Re-attach the question the prompt was asked about, so the
+                  // choice keeps the columns the user already named.
+                  const original = messages.find((m) => m.id === id)?.disambiguation?.original_message
+                  handleSend(original ? `${opt} — ${original}` : opt)
+                }}
                 onGuidanceAccept={() => handleSend("Track as project")}
                 onGuidanceRun={(query) => handleSend(query)}
                 onFeedbackDismiss={(id) => setDismissedFeedback((prev) => new Set([...prev, id]))}

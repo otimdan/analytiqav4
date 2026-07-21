@@ -11,6 +11,7 @@ from app.sandbox.repair import attempt_repair
 from app.orchestrator.context_builder import format_context_for_prompt
 from app.profiling.cache import get_cached_profile
 from app.stats_engine.chart_selector import recommend_chart
+from app.stats_engine.column_matcher import match_columns
 from app.db.aio import run_db
 
 _EXECUTE_CODE_TOOL = {
@@ -42,7 +43,7 @@ async def handle(message: str, session: Session, context: dict[str, Any], recent
     plot_directive = ""
     if _is_plot_request(message):
         if profile:
-            mentioned = _extract_mentioned_columns(message, col_names)
+            mentioned = _extract_mentioned_columns(message, col_names, profile)
             chart_rec = recommend_chart(mentioned, profile)
         if chart_rec:
             plot_directive = f"\n\nThe user wants a visualization. {chart_rec.directive} You MUST produce this chart."
@@ -121,7 +122,7 @@ async def handle(message: str, session: Session, context: dict[str, Any], recent
 
     code_used = "\n\n".join(all_code_blocks) if all_code_blocks else None
     stage = "visualisation" if all_images else "descriptive"
-    variables = _extract_mentioned_columns(message, col_names)
+    variables = _extract_mentioned_columns(message, col_names, profile)
 
     chart_type = chart_rec.chart_type if chart_rec else _infer_chart_type(all_code_blocks)
     chart_caption = chart_rec.rationale if chart_rec else None
@@ -280,10 +281,12 @@ def _infer_chart_type(code_blocks):
     return "chart"
 
 
-def _extract_mentioned_columns(message, columns):
-    # Match real column names against the message (same approach as the
-    # confirmatory handler), case-insensitively.
-    return [col for col in columns if col.lower() in message.lower()]
+def _extract_mentioned_columns(message, columns, profile=None):
+    # Token-sequence matching, so "exam score" finds exam_score. A plain
+    # substring test missed every natural phrasing, which left charts with no
+    # variables_involved and broke the "plot X vs Y" -> "is that significant?"
+    # context carry.
+    return match_columns(message, columns, profile)
 
 
 _INFERENTIAL_RE = re.compile(

@@ -97,7 +97,9 @@ export interface Message {
   regime?: string
   artifact_id?: string
   show_feedback?: boolean
-  disambiguation?: { question: string; options: string[] }
+  // `original_message` is the question that triggered the prompt. The answer is
+  // sent as a new message, so without it "Run a test" arrives naming no columns.
+  disambiguation?: { question: string; options: string[]; original_message?: string }
   confirmation_prompt?: string
   guidance_suggestion?: string
   guidance_next_action?: NextAction | null
